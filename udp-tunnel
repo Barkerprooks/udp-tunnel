@@ -1,0 +1,174 @@
+#!/usr/bin/env python3
+
+from argparse import ArgumentParser
+from socket import socket, timeout, AF_INET, SOCK_DGRAM
+from select import poll, POLLIN
+from random import randint
+
+RECV_SIZE = 4096
+INIT_PORT = 42069
+
+def send_for_proxy(host):
+    tunnel = socket(AF_INET, SOCK_DGRAM, 0)
+    try:
+        tunnel.connect((host, INIT_PORT))
+    except ConnectionRefusedError:
+        return None
+    tunnel.send(b"ready")
+    tunnel.settimeout(1)
+    try:
+        message = tunnel.recv(2)
+        if message != b"ok":
+            print(" x protocol error")
+            exit(0)
+    except (ConnectionRefusedError, TimeoutError, timeout):
+        return None
+    
+    tunnel.settimeout(None)
+    return tunnel
+
+def wait_for_local(host):
+    tunnel = socket(AF_INET, SOCK_DGRAM, 0)
+    tunnel.bind((host, INIT_PORT))
+    message, address = tunnel.recvfrom(5)
+    if message != b"ready":
+        print(" x forwarder isn't ready, try again")
+        exit(0)
+    tunnel.connect(address)
+    tunnel.send(b"ok")
+    return tunnel, address[0]
+
+def open_new_forward(tunnel, port):
+    tunnel.send(("connect %s" % port).encode("utf-8"))
+    confirm = tunnel.recv(RECV_SIZE)
+    return confirm == b"ok"
+
+def select_port(ports):
+    port = randint(40000, 60000)
+    while port in ports:
+        port = randint(40000, 60000)
+    ports.append(port)
+    return port, ports
+
+def proxy(host, listen, verbose) -> int:
+    print("running internet facing proxy")
+
+    ports = []
+    clients = {}
+    sockets = poll()
+
+    # wait for forwarder to send ready, send back ok
+    print(" > waiting for forwarder to connect...")
+    tunnel, local = wait_for_local(host)
+    print(" + connected to:", local)
+
+    # open door to clients
+    print(" > opening server on port:", listen)
+    with socket(AF_INET, SOCK_DGRAM, 0) as server:
+        server.bind((host, listen))
+        sockets.register(server, POLLIN)
+        try:
+            while 1:
+                events = sockets.poll()
+                for fd, event in events:
+                    if fd == server.fileno() and event > 0:
+                        print(" > incoming client data")
+                        packet, address = server.recvfrom(RECV_SIZE)
+                        if address not in clients:
+                            print(" > adding new client:", address)
+                            port, ports = select_port(ports)
+                            clients[address] = socket(AF_INET, SOCK_DGRAM, 0)
+                            clients[address].bind((host, port))
+                            print(" + client tethered on:", port)
+                            # TODO: tell client to connect on this port
+                            tunnel.send(("connect:"+str(port)).encode("utf-8"))
+                            print(" > connection request sent")
+                            _, tether = clients[address].recvfrom(RECV_SIZE)
+                            clients[address].connect(tether)
+                            clients[address].send(packet)
+                            sockets.register(clients[address], POLLIN)
+                        else:
+                            clients[address].send(packet)
+                            print(" > sending through tunnel")
+                    else:
+                        for address, sock in clients.items():
+                            if fd == sock.fileno() and event > 0:
+                                print(" > fd:", fd, "coming through tunnel")
+                                packet = sock.recv(RECV_SIZE)
+                                server.sendto(packet, address)
+        except KeyboardInterrupt:
+            return 0
+        except Exception as e:
+            print(e)
+    return 0
+
+def local(host, server, verbose) -> int:
+    print("running local server forwarder")
+
+    tunnel = None
+    clients = {}
+    sockets = poll()
+    server_addr = ("localhost", server)
+
+    print(" > sending ready status...")
+    while tunnel is None:
+        tunnel = send_for_proxy(host)
+    
+    print(" + remote proxy connected")
+    sockets.register(tunnel, POLLIN)
+    try:
+        while 1:
+            events = sockets.poll()
+            for fd, event in events:
+                if fd == tunnel.fileno() and event > 0:
+                    print(" > incoming command from proxy")
+                    message = tunnel.recv(RECV_SIZE)
+                    if b"connect:" in message:
+                        try:
+                            port = int(message.decode("utf-8").split(':')[1])
+                            clients[port] = (socket(AF_INET, SOCK_DGRAM, 0), 
+                                             socket(AF_INET, SOCK_DGRAM, 0))
+                            clients[port][1].connect(server_addr)
+                            clients[port][0].connect((host, port))
+                            clients[port][0].send(b"ok")
+                            sockets.register(clients[port][0], POLLIN)
+                            sockets.register(clients[port][1], POLLIN)
+                            print(" + tethered on", port)
+                        except ValueError:
+                            print(" x protocol error:", message.decode("utf-8"))
+                else:
+                    for port, (rsock, lsock) in clients.items():
+                        if fd == lsock.fileno() and event == POLLIN:
+                            print(" > incoming from local")
+                            packet = lsock.recv(RECV_SIZE)
+                            if verbose:
+                                print(packet)
+                            rsock.send(packet)
+                        elif fd == rsock.fileno() and event == POLLIN:
+                            print(" > incoming from proxy")
+                            packet = rsock.recv(RECV_SIZE)
+                            if verbose:
+                                print(packet)
+                            print(lsock.sendto(packet, server_addr))
+
+    except KeyboardInterrupt:
+        return 0
+
+    return 0
+
+def main(args):
+    run = { "proxy": proxy,
+            "local": local }
+    return run[args.mode](args.host, args.port, args.verbose)
+
+if __name__ == "__main__":
+    
+    parser = ArgumentParser(add_help=False)
+    parser.add_argument("mode", type=str, choices={"proxy", "local"})
+    parser.add_argument("-v", "--verbose", dest="verbose", action="store_true")
+    parser.add_argument("-h", "--host", default="0.0.0.0",
+            help="host to listen on if PROXY, host to connect to if LOCAL")
+    parser.add_argument("-p", "--port", default=27960,
+            type=int, help="port to listen on if PROXY, port to connect to if LOCAL")
+
+    exit(main(parser.parse_args()))
