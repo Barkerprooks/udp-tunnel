@@ -4,10 +4,10 @@ with other games or programs. There are no dependancies, just make sure python3 
 
 # How to use
 ### Download the script
-`
+```
 wget https://raw.githubusercontent.com/Barkerprooks/udp-tunnel/main/udp-tunnel
 chmod +x udp-tunnel
-`
+```
 ### On the remote side (proxy, internet facing server, etc)
 `./udp-tunnel proxy -p <listen port>`\
 this will open an internet facing port on \<listen port\>
