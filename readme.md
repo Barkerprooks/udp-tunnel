@@ -5,14 +5,13 @@ with other games or programs. There are no dependancies, just make sure python3 
 
 # How to use
 
-on the remote side (proxy, internet facing server, etc)
+### to download the script
+`wget https://raw.githubusercontent.com/Barkerprooks/udp-tunnel/main/udp-tunnel`
 
-`./udp-tunnel proxy -p <listen port>`
-
+### on the remote side (proxy, internet facing server, etc)
+`./udp-tunnel proxy -p <listen port>`\
 this will open an internet facing port on \<listen port\>
 
-on the local side (home server, raspberry pi, etc)
-
-`./udp-tunnel local -h <proxy host> -p <local port>`
-
+### on the local side (home server, raspberry pi, etc)
+`./udp-tunnel local -h <proxy host> -p <local port>`\
 this will connect to the proxy, and the local service to forward
