@@ -23,7 +23,6 @@ def send_for_proxy(host):
             exit(0)
     except (ConnectionRefusedError, TimeoutError, timeout):
         return None
-    
     tunnel.settimeout(None)
     return tunnel
 
@@ -37,11 +36,6 @@ def wait_for_local(host):
     tunnel.connect(address)
     tunnel.send(b"ok")
     return tunnel, address[0]
-
-def open_new_forward(tunnel, port):
-    tunnel.send(("connect %s" % port).encode("utf-8"))
-    confirm = tunnel.recv(RECV_SIZE)
-    return confirm == b"ok"
 
 def select_port(ports):
     port = randint(40000, 60000)
@@ -71,8 +65,9 @@ def proxy(host, listen, verbose) -> int:
             while 1:
                 events = sockets.poll()
                 for fd, event in events:
-                    if fd == server.fileno() and event > 0:
-                        print(" > incoming client data")
+                    if fd == server.fileno() and event == POLLIN:
+                        if verbose:
+                            print(" > incoming client data")
                         packet, address = server.recvfrom(RECV_SIZE)
                         if address not in clients:
                             print(" > adding new client:", address)
@@ -86,14 +81,18 @@ def proxy(host, listen, verbose) -> int:
                             _, tether = clients[address].recvfrom(RECV_SIZE)
                             clients[address].connect(tether)
                             clients[address].send(packet)
+                            if verbose:
+                                print(" > sending through tunnel")
                             sockets.register(clients[address], POLLIN)
                         else:
                             clients[address].send(packet)
-                            print(" > sending through tunnel")
+                            if verbose:
+                                print(" > sending through tunnel")
                     else:
                         for address, sock in clients.items():
-                            if fd == sock.fileno() and event > 0:
-                                print(" > fd:", fd, "coming through tunnel")
+                            if fd == sock.fileno() and event == POLLIN:
+                                if verbose:
+                                    print(" > fd:", fd, "coming through tunnel for:", address)
                                 packet = sock.recv(RECV_SIZE)
                                 server.sendto(packet, address)
         except KeyboardInterrupt:
@@ -139,18 +138,17 @@ def local(host, server, verbose) -> int:
                 else:
                     for port, (rsock, lsock) in clients.items():
                         if fd == lsock.fileno() and event == POLLIN:
-                            print(" > incoming from local")
                             packet = lsock.recv(RECV_SIZE)
                             if verbose:
+                                print(" > incoming from local")
                                 print(packet)
                             rsock.send(packet)
                         elif fd == rsock.fileno() and event == POLLIN:
-                            print(" > incoming from proxy")
                             packet = rsock.recv(RECV_SIZE)
                             if verbose:
+                                print(" > incoming from proxy")
                                 print(packet)
-                            print(lsock.sendto(packet, server_addr))
-
+                            lsock.sendto(packet, server_addr)
     except KeyboardInterrupt:
         return 0
 
