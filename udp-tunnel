@@ -19,8 +19,7 @@ def send_for_proxy(host):
     try:
         message = tunnel.recv(2)
         if message != b"ok":
-            print(" x protocol error")
-            exit(0)
+            return None
     except (ConnectionRefusedError, TimeoutError, timeout):
         return None
     tunnel.settimeout(None)
@@ -47,6 +46,12 @@ def select_port(ports):
 def proxy(host, listen, verbose) -> int:
     print("running internet facing proxy")
 
+    # ports: list of ports so we can check and
+    # make sure we aren't assigning the same
+    # port
+    # clients: a dict that maps incoming address
+    # to a new socket
+    # sockets: connection pool
     ports = []
     clients = {}
     sockets = poll()
@@ -75,7 +80,6 @@ def proxy(host, listen, verbose) -> int:
                             clients[address] = socket(AF_INET, SOCK_DGRAM, 0)
                             clients[address].bind((host, port))
                             print(" + client tethered on:", port)
-                            # TODO: tell client to connect on this port
                             tunnel.send(("connect:"+str(port)).encode("utf-8"))
                             print(" > connection request sent")
                             _, tether = clients[address].recvfrom(RECV_SIZE)
@@ -137,18 +141,19 @@ def local(host, server, verbose) -> int:
                             print(" x protocol error:", message.decode("utf-8"))
                 else:
                     for port, (rsock, lsock) in clients.items():
-                        if fd == lsock.fileno() and event == POLLIN:
-                            packet = lsock.recv(RECV_SIZE)
-                            if verbose:
-                                print(" > incoming from local")
-                                print(packet)
-                            rsock.send(packet)
-                        elif fd == rsock.fileno() and event == POLLIN:
-                            packet = rsock.recv(RECV_SIZE)
-                            if verbose:
-                                print(" > incoming from proxy")
-                                print(packet)
-                            lsock.sendto(packet, server_addr)
+                        if event == POLLIN:
+                            if fd == lsock.fileno():
+                                packet = lsock.recv(RECV_SIZE)
+                                if verbose:
+                                    print(" > incoming from local")
+                                    print(packet)
+                                rsock.send(packet)
+                            elif fd == rsock.fileno():
+                                packet = rsock.recv(RECV_SIZE)
+                                if verbose:
+                                    print(" > incoming from proxy")
+                                    print(packet)
+                                lsock.sendto(packet, server_addr)
     except KeyboardInterrupt:
         return 0
 
