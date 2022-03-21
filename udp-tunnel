@@ -38,6 +38,8 @@ def wait_for_local(host):
 
 def select_port(ports):
     port = randint(40000, 60000)
+    if len(ports) >= 20000:
+        return None, ports
     while port in ports:
         port = randint(40000, 60000)
     ports.append(port)
@@ -77,6 +79,8 @@ def proxy(host, listen, verbose) -> int:
                         if address not in clients:
                             print(" > adding new client:", address)
                             port, ports = select_port(ports)
+                            if port is None:
+                                continue
                             clients[address] = socket(AF_INET, SOCK_DGRAM, 0)
                             clients[address].bind((host, port))
                             print(" + client tethered on:", port)
