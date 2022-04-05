@@ -4,9 +4,71 @@ from argparse import ArgumentParser
 from socket import socket, timeout, AF_INET, SOCK_DGRAM
 from select import poll, POLLIN
 from random import randint
+from os.path import isfile, realpath
+from sys import argv, stdin, stdout, stderr
+from os import dup2, chdir, fork, getpid, system, setsid, remove, umask
+from signal import signal, SIGTERM, SIGINT
+
+import atexit
 
 RECV_SIZE = 4096
 INIT_PORT = 42069
+PID_FILE = "/tmp/" + argv[0].lstrip("./") + ".pid"
+
+VERSION = "0.5.1"
+BANNER = """%s v%s
+author: parker (https://github.com/BarkerProoks/udp-tunnel)""" % (argv[0].lstrip("./"), VERSION)
+HELP = """MODE (local | proxy)     ... required positional argument
+  -d, --daemon             ... runs script in the background
+  -o, --output <file>      ... sends stdout to <file>
+  -h, --host <hostname/ip> ... for local: proxy host, for proxy: host to serve on
+  -p, --port <port #>      ... for local: port to connect to locally, for proxy: port to serve on
+  -k, --kill               ... kills the script if already running (doesn't require a MODE)
+  -v, --verbose            ... print out each packet sent"""
+
+def kill():
+    try:
+        remove(PID_FILE)
+        exit(0)
+    except:
+        pass
+
+def safe_fork():
+    try:
+        pid = fork()
+        if pid > 0:
+            exit(0)
+    except OSError:
+        print("fork failed")
+        exit(1)
+
+def daemonize(output):
+    output = realpath(output) if output is not None else None
+    # double fork magic ***
+    # fork #1
+    safe_fork()
+    # reset env
+    chdir('/')
+    setsid()
+    umask(0)
+    # fork #2
+    safe_fork()
+    # redirect output to log file if specified
+    redirect(output if output is not None else "/dev/null")    
+    # set up pidfile (ensure it gets cleaned up)
+    with open(PID_FILE, "wt+") as file:
+        print(getpid(), file=file)
+
+def redirect(output=None):
+    if output is None:
+        return    
+    stdout.flush()
+    stderr.flush()
+    logfile = open(output, "at+")
+    devnull = open("/dev/null", "w")
+    dup2(devnull.fileno(), stdin.fileno())
+    dup2(logfile.fileno(), stdout.fileno())
+    dup2(logfile.fileno(), stderr.fileno())
 
 def send_for_proxy(host):
     tunnel = socket(AF_INET, SOCK_DGRAM, 0)
@@ -163,19 +225,76 @@ def local(host, server, verbose) -> int:
 
     return 0
 
-def main(args):
+def run(args):
+    if args.daemon:
+        print("starting in background...")
+        daemonize(args.output)
+    if args.output and not args.daemon:
+        print("redirecting output...")
+        redirect(args.output)
     run = { "proxy": proxy,
             "local": local }
     return run[args.mode](args.host, args.port, args.verbose)
 
-if __name__ == "__main__":
+def main():
+
+    print(BANNER)
     
+    if len(argv) == 1:
+        print("use --help for more info")
+        exit(0)
+
+    if "--help" in argv:
+        print(HELP)
+        exit(0)
+
+    if "-k" in argv or "--kill" in argv:
+        try:
+            with open(PID_FILE, "rt") as file:
+                pid = file.read().strip()
+            print("killing process " + pid)
+            system("kill " + pid)
+            remove(PID_FILE)
+        except OSError:
+            print("could not find .pid file,", argv[0], "should not be running")
+        exit(0)
+
+    if isfile(PID_FILE):
+        print(argv[0], "is already running")
+        print("would you like to kill that and start a new process?", end='')
+        answer = None
+        while answer not in ['Y', 'N', '']:
+            answer = input(" [Y/n] ").upper()
+            if answer in ["Y", '']:
+                with open(PID_FILE, "rt") as file:
+                    system("kill " + file.read().strip())
+                remove(PID_FILE)
+            elif answer == "N":
+                print("okay, cool")
+                exit(0)
+
+    atexit.register(kill)
+    signal(SIGTERM, kill)
+    signal(SIGINT, kill)
+
     parser = ArgumentParser(add_help=False)
     parser.add_argument("mode", type=str, choices={"proxy", "local"})
     parser.add_argument("-v", "--verbose", dest="verbose", action="store_true")
+    parser.add_argument("-d", "--daemon", dest="daemon", action="store_true",
+        help="starts tunnel in the background")
+    parser.add_argument("-o", "--output", default=None,
+        help="optional output file for logging, will disable stdout")
     parser.add_argument("-h", "--host", default="0.0.0.0",
-            help="host to listen on if PROXY, host to connect to if LOCAL")
-    parser.add_argument("-p", "--port", default=27960,
-            type=int, help="port to listen on if PROXY, port to connect to if LOCAL")
+        help="host to listen on if PROXY, host to connect to if LOCAL")
+    parser.add_argument("-p", "--port", default=27960, type=int, 
+        help="port to listen on if PROXY, port to connect to if LOCAL")
 
-    exit(main(parser.parse_args()))
+    exit(run(parser.parse_args()))
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nctrl+c detected")
+    finally:    
+        exit(0)
