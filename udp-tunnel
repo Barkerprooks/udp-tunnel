@@ -10,12 +10,13 @@ from os import dup2, chdir, fork, getpid, system, setsid, remove, umask
 from signal import signal, SIGTERM, SIGINT
 
 import atexit
+import time
 
 RECV_SIZE = 4096
 INIT_PORT = 42069
 PID_FILE = "/tmp/" + argv[0].lstrip("./") + ".pid"
 
-VERSION = "0.5.1"
+VERSION = "0.5.2"
 BANNER = """%s v%s
 author: parker (https://github.com/BarkerProoks/udp-tunnel)""" % (argv[0].lstrip("./"), VERSION)
 HELP = """MODE (local | proxy)     ... required positional argument
@@ -61,7 +62,7 @@ def daemonize(output):
 
 def redirect(output=None):
     if output is None:
-        return    
+        return
     stdout.flush()
     stderr.flush()
     logfile = open(output, "at+")
@@ -116,7 +117,7 @@ def proxy(host, listen, verbose) -> int:
     # clients: a dict that maps incoming address
     # to a new socket
     # sockets: connection pool
-    ports = []
+    ports = [INIT_PORT, listen] # make sure these two ports arent selected
     clients = {}
     sockets = poll()
 
@@ -127,12 +128,31 @@ def proxy(host, listen, verbose) -> int:
 
     # open door to clients
     print(" > opening server on port:", listen)
+    delta = time.time()
     with socket(AF_INET, SOCK_DGRAM, 0) as server:
         server.bind((host, listen))
         sockets.register(server, POLLIN)
         try:
             while 1:
-                events = sockets.poll()
+                alpha = time.time()
+                # send heartbeat command
+                if int(alpha - delta) >= 5:
+                    if verbose:
+                        print(" > requesting heartbeat")
+                    delta = alpha
+                    tunnel.send(b"ok?")
+                    tunnel.settimeout(5)
+                    try:
+                        message = tunnel.recv(3)
+                        if b"ok!" not in message:
+                            print("protocol error")
+                            exit(1)
+                    except (ConnectionRefusedError, TimeoutError, timeout):
+                        print("connection lost")
+                        exit(1)
+                    tunnel.settimeout(None)
+
+                events = sockets.poll(0.1)
                 for fd, event in events:
                     if fd == server.fileno() and event == POLLIN:
                         if verbose:
@@ -142,6 +162,7 @@ def proxy(host, listen, verbose) -> int:
                             print(" > adding new client:", address)
                             port, ports = select_port(ports)
                             if port is None:
+                                print(" ! too many clients (wtf???)")
                                 continue
                             clients[address] = socket(AF_INET, SOCK_DGRAM, 0)
                             clients[address].bind((host, port))
@@ -173,7 +194,7 @@ def proxy(host, listen, verbose) -> int:
 
 def local(host, server, verbose) -> int:
     print("running local server forwarder")
-
+    
     tunnel = None
     clients = {}
     sockets = poll()
@@ -185,9 +206,17 @@ def local(host, server, verbose) -> int:
     
     print(" + remote proxy connected")
     sockets.register(tunnel, POLLIN)
+    
+    timeout = time.time()
     try:
         while 1:
-            events = sockets.poll()
+ 
+            if int(time.time() - timeout) > 5:
+                print("connection lost")
+                exit(1)
+
+            events = sockets.poll(0.1)
+
             for fd, event in events:
                 if fd == tunnel.fileno() and event > 0:
                     print(" > incoming command from proxy")
@@ -205,6 +234,12 @@ def local(host, server, verbose) -> int:
                             print(" + tethered on", port)
                         except ValueError:
                             print(" x protocol error:", message.decode("utf-8"))
+                    if b"ok?" in message:
+                        if verbose:
+                            print(" ! heartbeat requested")
+                        # tell tunnel we're ok!
+                        tunnel.send(b"ok!")
+                        timeout = time.time()
                 else:
                     for port, (rsock, lsock) in clients.items():
                         if event == POLLIN:
@@ -251,12 +286,12 @@ def main():
     if "-k" in argv or "--kill" in argv:
         try:
             with open(PID_FILE, "rt") as file:
-                pid = file.read().strip()
-            print("killing process " + pid)
-            system("kill " + pid)
+                pid = int(file.read().strip())
+            print("killing process: %d" % pid)
+            system("kill %d" % pid)
             remove(PID_FILE)
         except OSError:
-            print("could not find .pid file,", argv[0], "should not be running")
+            pass
         exit(0)
 
     if isfile(PID_FILE):
@@ -267,7 +302,8 @@ def main():
             answer = input(" [Y/n] ").upper()
             if answer in ["Y", '']:
                 with open(PID_FILE, "rt") as file:
-                    system("kill " + file.read().strip())
+                    pid = int(file.read().strip())
+                    system("kill %d" % pid)
                 remove(PID_FILE)
             elif answer == "N":
                 print("okay, cool")
