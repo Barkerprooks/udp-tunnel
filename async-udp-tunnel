@@ -1,0 +1,147 @@
+#!/usr/bin/python3
+
+# created by: Jon Parker Brooks
+# started on: --/--/---- 
+# updated on: 03/24/2025
+# github: BarkerProoks
+
+from asyncio import run, get_running_loop, DatagramTransport, DatagramProtocol
+from asyncio import sleep as asleep
+from time import sleep
+from sys import argv
+from argparse import ArgumentParser
+
+def string_to_addr(address: str) -> tuple[str, int]:
+    host, port = address.split(':')
+    return host, int(port)
+
+
+class TunnelCmd:
+    CLOSED: bytes = b"\x04"
+    SYNACK: bytes = b"\x22"
+    ACK: bytes = b"\x06"
+    SYN: bytes = b"\x16"
+
+
+class ProxyBindSocket:
+    transport: DatagramTransport | None = None
+    synack: bytes = TunnelCmd.SYN
+    addr: tuple[str, int] | None = None
+
+    def connection_made(self, transport: DatagramTransport) -> None:
+        self.transport = transport
+
+    def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
+        print("proxy recv: ", data)
+
+        if self.synack == TunnelCmd.SYN and data == TunnelCmd.SYN:
+            self.synack = TunnelCmd.ACK
+            self.transport.sendto(self.synack, addr)
+            print("handshake started!")
+            
+        elif self.synack == TunnelCmd.ACK and data == TunnelCmd.ACK:
+            self.transport.sendto(self.synack, addr)
+            self.synack = TunnelCmd.SYNACK 
+            self.addr = addr
+            print("activated!")
+
+    def connection_lost(self, exc) -> None:
+        ...
+
+    def error_received(self, exc) -> None:
+        ...
+
+
+class LocalBindSocket:
+    transport: DatagramTransport | None = None
+    synack: bytes = TunnelCmd.SYN
+
+    def connection_made(self, transport: DatagramTransport) -> None:
+        self.transport = transport
+        # attempt initial handshake
+        print('starting handshake')
+        self.transport.sendto(TunnelCmd.SYN)
+
+    def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
+        print("local recv: ", data)
+
+        if self.synack == TunnelCmd.SYN and data == TunnelCmd.ACK:
+            print('ack received')
+            self.transport.sendto(TunnelCmd.ACK)
+            self.synack = TunnelCmd.SYNACK
+            self.addr = addr
+  
+    def connection_lost(self, exc) -> None:
+        ...
+
+    def error_received(self, exc) -> None:
+        if not self.synack == TunnelCmd.SYNACK:
+            # not initialized yet, so keep trying
+            print("retrying handshake...")
+            self.transport.sendto(TunnelCmd.SYN)
+            sleep(5)
+
+
+async def bind_local(bind: tuple[str, int]) -> tuple[DatagramTransport, DatagramProtocol]:
+    loop = get_running_loop()
+    return await loop.create_datagram_endpoint(LocalBindSocket, remote_addr=bind)
+
+
+async def bind_proxy(bind: tuple[str, int]) -> tuple[DatagramTransport, DatagramProtocol]:
+    loop = get_running_loop()
+    return await loop.create_datagram_endpoint(ProxyBindSocket, local_addr=bind)
+
+
+async def loop_local(transport: DatagramTransport, protocol: LocalBindSocket):
+    while True:
+        await asleep(2)
+        if protocol.synack == TunnelCmd.SYNACK:
+            print("local: activated!")
+
+
+async def loop_proxy(transport: DatagramTransport, protocol: ProxyBindSocket):
+    while True:
+        await asleep(2)
+        if protocol.synack == TunnelCmd.SYNACK:
+            print("proxy: sending heartbeat")
+            transport.sendto(TunnelCmd.SYNACK, protocol.addr)
+
+
+def get_parser() -> ArgumentParser:
+    parser = ArgumentParser()
+    parser.add_argument("mode", choices=("local", "proxy"), type=str)
+    parser.add_argument("-f", "--forward", type=str, default="127.0.0.1:8000")
+    parser.add_argument("-b", "--bind", type=str, default="127.0.0.1:8001")
+    return parser
+
+
+def close_connections(forward: tuple[DatagramTransport, DatagramProtocol], bind: tuple[DatagramTransport, DatagramProtocol]) -> None:
+    _, forward_protocol = forward
+    _, bind_protocol = bind
+    forward_protocol.close()
+    bind_protocol.close()
+
+
+async def main():
+
+    args = get_parser().parse_args()
+    
+    forward_addr = string_to_addr(args.forward), 
+    bind_addr = string_to_addr(args.bind)
+
+    fs = {
+        "local": { "loop": loop_local, "bind": bind_local, "forward": forward_local },
+        "proxy": { "loop": loop_proxy, "bind": bind_proxy, "forward": forward_proxy }
+    }
+
+    forward = await fs[args.mode]["forward"](forward_addr)
+    bind = await fs[args.mode]["bind"](bind_addr)
+    loop = fs[args.mode]["loop"]
+
+    try:
+        await loop(forward, bind)
+    finally:
+        close_connections(forward, bind)
+
+
+run(main())
