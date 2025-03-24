@@ -211,7 +211,7 @@ def local(host, server, verbose) -> int:
     try:
         while 1:
  
-            if int(time.time() - timeout) > 5:
+            if int(time.time() - timeout) > 30:
                 print("connection lost")
                 exit(1)
 
