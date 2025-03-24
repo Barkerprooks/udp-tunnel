@@ -1,3 +1,6 @@
+# NOTE: starting on converting this into an async project.
+## THIS IS STILL VERY MUCH A WORK IN PROGRESS AND NOT WORKING
+
 # UDP Tunnel v0.5.2 - A simple reverse proxy for IOQuake3
 This script uses the primitive socket API and posix "select" functionality to create an asynchronous UDP reverse proxy. This proxy is designed specifically for ioquake3, but it will probably work
 with other games or programs. There are no dependancies, just make sure python3 is installed
