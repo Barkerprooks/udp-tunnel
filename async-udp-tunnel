@@ -17,22 +17,24 @@ def string_to_addr(address: str) -> tuple[str, int]:
 
 
 class TunnelCmd:
+    CONNECT: bytes = b"\x05"
     CLOSED: bytes = b"\x04"
     SYNACK: bytes = b"\x22"
     ACK: bytes = b"\x06"
     SYN: bytes = b"\x16"
 
 
-class ProxyBindSocket:
+class ProxyBindSocket(DatagramProtocol):
     transport: DatagramTransport | None = None
-    synack: bytes = TunnelCmd.SYN
     addr: tuple[str, int] | None = None
+
+    synack: bytes = TunnelCmd.SYN
 
     def connection_made(self, transport: DatagramTransport) -> None:
         self.transport = transport
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
-        print("proxy recv: ", data)
+        print("proxy bind recv: ", data)
 
         if self.synack == TunnelCmd.SYN and data == TunnelCmd.SYN:
             self.synack = TunnelCmd.ACK
@@ -52,34 +54,85 @@ class ProxyBindSocket:
         ...
 
 
-class LocalBindSocket:
+class ProxyForwardSocket(DatagramProtocol):
+    transport: DatagramTransport | None = None
+    addr: tuple[str, int] | None = None
+
+    def __init__(self, addr: tuple[str, int]) -> None:
+        self.addr = addr
+
+    def connection_made(self, transport: DatagramTransport) -> None:
+        self.transport = transport
+
+    def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
+        print("proxy forward recv: ", data)
+        # every datagram that get's RECV needs to be tunneled back
+        self.transport.sendto(data, self.addr)
+
+
+
+class LocalBindSocket(DatagramProtocol):
     transport: DatagramTransport | None = None
     synack: bytes = TunnelCmd.SYN
 
     def connection_made(self, transport: DatagramTransport) -> None:
-        self.transport = transport
-        # attempt initial handshake
         print('starting handshake')
+        self.transport = transport
         self.transport.sendto(TunnelCmd.SYN)
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
         print("local recv: ", data)
 
         if self.synack == TunnelCmd.SYN and data == TunnelCmd.ACK:
-            print('ack received')
             self.transport.sendto(TunnelCmd.ACK)
             self.synack = TunnelCmd.SYNACK
             self.addr = addr
-  
+
+        if self.synack == TunnelCmd.SYNACK:
+            self.transport.sendto(self.synack)
+
     def connection_lost(self, exc) -> None:
-        ...
+        print("connection lost :(")
 
     def error_received(self, exc) -> None:
-        if not self.synack == TunnelCmd.SYNACK:
+        if self.synack == TunnelCmd.SYN or self.synack == TunnelCmd.ACK:
             # not initialized yet, so keep trying
             print("retrying handshake...")
             self.transport.sendto(TunnelCmd.SYN)
             sleep(5)
+        else:
+            print("local bind server closed")
+            self.synack = TunnelCmd.CLOSED
+
+
+class LocalForwardSocket(DatagramProtocol):
+    transport: DatagramTransport | None = None
+    addr: tuple[str, int] | None = None
+
+    def __init__(self, addr: tuple[str, int]):
+        self.addr = addr
+
+    def connection_made(self, transport: DatagramTransport) -> None:
+        self.transport = transport
+        self.transport._address = self.addr
+
+    def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
+        print('tunnel:', data)
+
+    def connection_lost(self, exc) -> None: ...
+    def error_received(self, exc) -> None: ...
+
+
+async def forward_proxy(forward: tuple[str, int], bind: tuple[str, int]) -> tuple[DatagramTransport, DatagramProtocol]:
+    socket = lambda: ProxyForwardSocket(bind)
+    loop = get_running_loop()
+    return await loop.create_datagram_endpoint(socket, local_addr=forward)
+
+
+async def forward_local(forward: tuple[str, int], bind: tuple[str, int]) -> tuple[DatagramTransport, DatagramProtocol]:
+    socket = lambda: LocalForwardSocket(bind)
+    loop = get_running_loop()
+    return await loop.create_datagram_endpoint(socket, remote_addr=forward)
 
 
 async def bind_local(bind: tuple[str, int]) -> tuple[DatagramTransport, DatagramProtocol]:
@@ -92,19 +145,24 @@ async def bind_proxy(bind: tuple[str, int]) -> tuple[DatagramTransport, Datagram
     return await loop.create_datagram_endpoint(ProxyBindSocket, local_addr=bind)
 
 
-async def loop_local(transport: DatagramTransport, protocol: LocalBindSocket):
+async def loop_local(forward: tuple[DatagramTransport, ProxyForwardSocket], bind: tuple[DatagramTransport, ProxyBindSocket]):
+    forward_transport, forward_protocol = forward
+    bind_transport, bind_protocol = bind
+    
     while True:
-        await asleep(2)
-        if protocol.synack == TunnelCmd.SYNACK:
+        if bind_protocol.synack == TunnelCmd.SYNACK:
             print("local: activated!")
 
 
-async def loop_proxy(transport: DatagramTransport, protocol: ProxyBindSocket):
+async def loop_proxy(forward: tuple[DatagramTransport, ProxyForwardSocket], bind: tuple[DatagramTransport, ProxyBindSocket]):
+    forward_transport, forward_protocol = forward
+    bind_transport, bind_protocol = bind
+    
     while True:
-        await asleep(2)
-        if protocol.synack == TunnelCmd.SYNACK:
+        if bind_protocol.synack == TunnelCmd.SYNACK:
             print("proxy: sending heartbeat")
-            transport.sendto(TunnelCmd.SYNACK, protocol.addr)
+            bind_transport.sendto(TunnelCmd.SYNACK, bind_transport.addr)
+            await asleep(2)
 
 
 def get_parser() -> ArgumentParser:
@@ -116,17 +174,17 @@ def get_parser() -> ArgumentParser:
 
 
 def close_connections(forward: tuple[DatagramTransport, DatagramProtocol], bind: tuple[DatagramTransport, DatagramProtocol]) -> None:
-    _, forward_protocol = forward
-    _, bind_protocol = bind
-    forward_protocol.close()
-    bind_protocol.close()
+    forward_transport, _ = forward
+    bind_transport, _ = bind
+    forward_transport.close()
+    bind_transport.close()
 
 
 async def main():
 
     args = get_parser().parse_args()
     
-    forward_addr = string_to_addr(args.forward), 
+    forward_addr = string_to_addr(args.forward)
     bind_addr = string_to_addr(args.bind)
 
     fs = {
@@ -134,13 +192,14 @@ async def main():
         "proxy": { "loop": loop_proxy, "bind": bind_proxy, "forward": forward_proxy }
     }
 
-    forward = await fs[args.mode]["forward"](forward_addr)
+    forward = await fs[args.mode]["forward"](forward_addr, bind_addr)
     bind = await fs[args.mode]["bind"](bind_addr)
     loop = fs[args.mode]["loop"]
 
     try:
         await loop(forward, bind)
     finally:
+        print("closing connections")
         close_connections(forward, bind)
 
 
