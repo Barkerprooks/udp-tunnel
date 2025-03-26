@@ -230,7 +230,7 @@ class LocalForwardProtocol(DatagramProtocol):
     transport: DatagramTransport | None = None
     tunnel: DatagramTransport | None = None
 
-    local_service_addr = tuple[int, str] | None
+    local_service_addr: tuple[int, str] | None = None 
 
     def connection_made(self, transport) -> None:
         self.transport = transport
