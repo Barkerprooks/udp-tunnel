@@ -118,8 +118,8 @@ async def main_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, i
         print("started proxy")
         while True:
             if forward_protocol.new_tunnel_addr:
-                slot = (slot + 1) % 60000
-                port = slot + 5535
+                slot = (slot + 1) % 20000
+                port = slot + 45535
             
                 tunnel_addr = (forward_addr[0], port)
                 tunnel_cmd = f"{port}".encode("utf-8")
