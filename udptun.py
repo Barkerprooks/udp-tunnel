@@ -214,7 +214,7 @@ class LocalTunnelProtocol(DatagramProtocol):
         self.transport.sendto(Command.CONNECT) # confirm connection by sending addr to server
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
-        if self.forward.proxy_tunnel_addr:
+        if self.forward.get_protocol().proxy_tunnel_addr:
             print("local tunnel: data coming from client incoming to service")
             print(data)
             self.forward.sendto(data, self.forward.proxy_tunnel_addr) # forward it di rectly to the service
