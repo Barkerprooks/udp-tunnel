@@ -165,6 +165,7 @@ class LocalTunnelProtocol(DatagramProtocol):
     def connection_made(self, transport) -> None:
         print("new tunnel connected")
         self.transport = transport
+        print(self.transport._address)
         self.transport.sendto(Command.CONNECT) # confirm connection by sending addr to server
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
@@ -242,6 +243,8 @@ async def main_local_loop(forward_addr: tuple[str, int], connect_addr: tuple[str
     """
 
     router_transport, router_protocol = await udp_connect(LocalRouterProtocol, connect_addr)
+    forward_transports = []
+    tunnel_transports = []
     
     try:
         print("running main loop")
@@ -255,6 +258,9 @@ async def main_local_loop(forward_addr: tuple[str, int], connect_addr: tuple[str
                 
                 tunnel_protocol.forward = forward_transport
                 forward_protocol.tunnel = tunnel_transport
+
+                forward_transports.append(forward_transport)
+                tunnel_transports.append(tunnel_transport)
 
                 router_protocol.new_tunnel_port = None
             
