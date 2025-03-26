@@ -98,6 +98,9 @@ class ProxyRouterProtocol(DatagramProtocol):
             print("RECV: ack, handshake complete")
             self.status = Command.SYNACK
             self.local_router_addr = addr # SYNACK means we've completed handshake
+        elif self.status == Command.SYNACK: # after handshaking try to keep alive
+            self.transport.sendto(self.status, addr)
+            sleep(2)
 
 
 async def main_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, int]) -> None:
@@ -137,6 +140,8 @@ async def main_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, i
                 tunnel_transport.sendto(forward_protocol.new_tunnel_data, tunnel_protocol.local_tunnel_addr)
                 forward_protocol.new_tunnel_addr = None
                 await asleep(10)
+
+            # keep-alive
             await asleep(0.1)
     except KeyboardInterrupt:
         # pass along CTRL+C
@@ -206,6 +211,9 @@ class LocalRouterProtocol(DatagramProtocol):
                 print("RECV: ack, activated")
                 self.status = Command.SYNACK # we acknowledge and send
                 self.transport.sendto(Command.SYNACK)
+            elif self.status == Command.SYNACK:
+                self.transport.sendto(self.status)
+                sleep(2)
         else: # tunnel connect is the only command longer than 1 byte
             print("incoming connection request")
             if data[0] == Command.CONNECT[0]:
