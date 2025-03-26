@@ -74,6 +74,7 @@ class ProxyTunnelProtocol(DatagramProtocol):
             self.forward.sendto(data, self.src_addr)
         else: # this first one to get it goes thru, 
             print(f"proxy tunnel recv: connected {addr_to_string(addr)}")
+            print(self.new_data)
             # ignore the contents and send the initial data
             self.transport.sendto(self.new_data, addr)
             # transport the new client data through the tunnel as quickly as possible
@@ -240,6 +241,7 @@ class LocalTunnelProtocol(DatagramProtocol):
             print("local tunnel: data coming from client incoming to service")
             print(data)
             self.forward.sendto(data, local_service_addr) # forward it di rectly to the service
+            print("send to", addr_to_string(local_service_addr))
         else:
             print("local tunnel: forwarder not connected for some reason")
 
