@@ -21,7 +21,7 @@ async def udp_connect(protocol_factory: DatagramProtocol, addr: tuple[str, int])
 
 
 async def udp_bind(protocol_factory: DatagramProtocol, addr: tuple[str, int]) -> tuple[DatagramTransport, DatagramProtocol]:
-    return await get_running_loop().create_datagram_endpoint(protocol_factory, local_addr=addr)
+    return await get_running_loop().create_datagram_endpoint(protocol_factory, local_addr=addr, reuse_port=True)
 
 
 class Command:
