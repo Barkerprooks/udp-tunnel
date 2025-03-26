@@ -245,13 +245,13 @@ async def main_local_loop(forward_addr: tuple[str, int], connect_addr: tuple[str
     router_transport, router_protocol = await udp_connect(LocalRouterProtocol, connect_addr)
     forward_transports = []
     tunnel_transports = []
-    
+
     try:
         print("running main loop")
         while True:
             if router_protocol.new_tunnel_port:
                 print("adding new tunnel")
-                tunnel_addr = (forward_addr[0], router_protocol.new_tunnel_port)
+                tunnel_addr = (connect_addr[0], router_protocol.new_tunnel_port)
 
                 tunnel_transport, tunnel_protocol = await udp_connect(LocalTunnelProtocol, tunnel_addr)
                 forward_transport, forward_protocol = await udp_connect(LocalForwardProtocol, forward_addr)
