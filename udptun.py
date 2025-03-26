@@ -240,8 +240,8 @@ class LocalTunnelProtocol(DatagramProtocol):
         if local_service_addr := self.forward.get_protocol().local_service_addr:
             print("local tunnel: data coming from client incoming to service")
             print(data)
-            self.forward.sendto(data, local_service_addr) # forward it di rectly to the service
             print("send to", addr_to_string(local_service_addr))
+            self.transport.sendto(data, local_service_addr) # forward it di rectly to the service
         else:
             print("local tunnel: forwarder not connected for some reason")
 
