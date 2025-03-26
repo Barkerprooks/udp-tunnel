@@ -79,7 +79,7 @@ class ProxyTunnelProtocol(DatagramProtocol):
             self.transport.sendto(self.new_data, addr)
             # transport the new client data through the tunnel as quickly as possible
             self.local_tunnel_addr = addr # after this just listen, the forwarder will handle the rest
-
+            self.transport.get_extra_info("socket").connect(addr) # call connect?
 
 
 class ProxyForwardProtocol(DatagramProtocol):
