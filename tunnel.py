@@ -5,6 +5,8 @@
 # updated on: 03/24/2025
 # github: BarkerProoks
 
+# I hate OOP... Why is the async API like this???
+
 from asyncio import run, get_running_loop, DatagramTransport, DatagramProtocol
 from asyncio import sleep as asleep
 from time import sleep
@@ -36,9 +38,15 @@ class Command:
 class ProxyTunnelProtocol(DatagramProtocol):
     local_tunnel_addr: tuple[str, int] | None = None
     src_addr: tuple[str, int] | None = None
+    new_data: bytes | None = None
 
     transport: DatagramTransport
     forward: DatagramTransport
+
+    def __init__(self, forward_protocol: DatagramProtocol, new_data: bytes) -> None:
+            self.src_addr = forward_protocol.new_tunnel_addr
+            self.forward = forward_protocol.transport
+            self.new_data = new_data
 
     def connection_made(self, transport) -> None:
         print("proxy tunnel: opened")
@@ -47,11 +55,11 @@ class ProxyTunnelProtocol(DatagramProtocol):
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
         print("proxy tunnel: yo nice", data)
         if self.local_tunnel_addr:
-            print("sending to ")
             self.forward.sendto(data, self.src_addr)
-        # this first one to get it goes thru
-        self.local_tunnel_addr = addr
-
+        else: # this first one to get it goes thru, 
+            # ignore the contents and send the initial data
+            self.local_tunnel_addr = addr
+            self.transport.sendto(self.new_data, addr)
 
 class ProxyForwardProtocol(DatagramProtocol):
     transport: DatagramTransport
@@ -108,7 +116,6 @@ async def main_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, i
     router_transport, router_protocol = await udp_bind(ProxyRouterProtocol, bind_addr)
     forward_transport, forward_protocol = await udp_bind(ProxyForwardProtocol, forward_addr)
     
-    forward_transports = []
     tunnel_transports = []
 
     slot = 0
@@ -124,26 +131,16 @@ async def main_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, i
                 tunnel_cmd = f"{port}".encode("utf-8")
 
                 print(f"opening tunnel port {port}")
-                tunnel_transport, tunnel_protocol = await udp_bind(ProxyTunnelProtocol, tunnel_addr)
-                tunnel_protocol.src_addr = forward_protocol.new_tunnel_addr
-                tunnel_protocol.forward = forward_transport
+                protocol_factory = lambda: ProxyTunnelProtocol(forward_protocol, forward_protocol.new_tunnel_data)
+                tunnel_transport, tunnel_protocol = await udp_bind(protocol_factory, tunnel_addr)
                 forward_protocol.tunnels[tunnel_addr] = tunnel_protocol
 
                 print("sending connect request")
                 router_transport.sendto(Command.CONNECT + tunnel_cmd, router_protocol.local_router_addr)
 
-                print("waiting for local tunnel address")
-                while not tunnel_protocol.local_tunnel_addr:
-                    # still keep-alive
-                    if router_protocol.status == Command.SYNACK:
-                        router_transport.sendto(Command.SYNACK, router_protocol.local_router_addr)
-                    await asleep(0.1)
-
-                print("tunnel opened")
-                tunnel_transport.sendto(forward_protocol.new_tunnel_data, tunnel_protocol.local_tunnel_addr)
                 forward_protocol.new_tunnel_addr = None
+                forward_protocol.new_tunnel_data = None
 
-                forward_transports.append(forward_transport)
                 tunnel_transports.append(tunnel_transport)
 
             # keep-alive
@@ -152,10 +149,12 @@ async def main_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, i
 
             await asleep(0.1)
     except KeyboardInterrupt:
-        # pass along CTRL+C
         raise KeyboardInterrupt
     finally:
         print("closing proxy connections")
+        for tunnel_transport in tunnel_transports:
+            tunnel_transport.close()
+        forward_transport.close()
         router_transport.close()
 
 
@@ -263,7 +262,6 @@ async def main_local_loop(forward_addr: tuple[str, int], connect_addr: tuple[str
                 tunnel_transports.append(tunnel_transport)
 
                 router_protocol.new_tunnel_port = None
-            
             await asleep(0.1)
     except KeyboardInterrupt:
         raise KeyboardInterrupt
@@ -278,12 +276,9 @@ async def main_local_loop(forward_addr: tuple[str, int], connect_addr: tuple[str
 
 async def main(args) -> None:
     forward_addr = string_to_addr(args.forward)
-    if args.mode == "local":
-        connect_addr = string_to_addr(args.connect)
-        await main_local_loop(forward_addr, connect_addr)
-    elif args.mode == "proxy":
-        bind_addr = string_to_addr(args.bind)
-        await main_proxy_loop(forward_addr, bind_addr)
+    match args.mode:
+        case "local":  await main_local_loop(forward_addr, string_to_addr(args.connect))
+        case "proxy": await main_proxy_loop(forward_addr, string_to_addr(args.bind))
 
 
 if __name__ == "__main__":
