@@ -214,10 +214,10 @@ class LocalTunnelProtocol(DatagramProtocol):
         self.transport.sendto(Command.CONNECT) # confirm connection by sending addr to server
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
-        if self.forward.get_protocol().proxy_tunnel_addr:
+        if self.forward.get_protocol().local_service_addr:
             print("local tunnel: data coming from client incoming to service")
             print(data)
-            self.forward.sendto(data, self.forward.proxy_tunnel_addr) # forward it di rectly to the service
+            self.forward.sendto(data, self.forward.local_service_addr) # forward it di rectly to the service
         else:
             print("local tunnel: forwarder not connected for some reason")
 
@@ -230,16 +230,16 @@ class LocalForwardProtocol(DatagramProtocol):
     transport: DatagramTransport | None = None
     tunnel: DatagramTransport | None = None
 
-    proxy_tunnel_addr: tuple[str, int] | None = None
+    local_service_addr = tuple[int, str] | None
 
     def connection_made(self, transport) -> None:
         self.transport = transport
+        self.local_service_addr = transport._address
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
         print("local forward: data coming from service outgoing to client")
         print(data)
         self.tunnel.sendto(data)
-        self.proxy_tunnel_addr = addr
 
 
 class LocalRouterProtocol(DatagramProtocol):
