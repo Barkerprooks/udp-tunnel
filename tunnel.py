@@ -9,13 +9,17 @@
 
 from asyncio import run, get_running_loop, DatagramTransport, DatagramProtocol
 from asyncio import sleep as asleep
-from time import sleep
 from argparse import ArgumentParser
+from time import sleep
 
 
 def string_to_addr(address: str) -> tuple[str, int]:
     host, port = address.split(':')
     return host, int(port)
+
+
+def addr_to_string(address: tuple[str, int]) -> str:
+    return f"{address[0]}:{address[1]}"
 
 
 async def udp_connect(protocol_factory: DatagramProtocol, addr: tuple[str, int]) -> tuple[DatagramTransport, DatagramProtocol]:
@@ -36,17 +40,17 @@ class Command:
 
 
 class ProxyTunnelProtocol(DatagramProtocol):
+    transport: DatagramTransport
+    forward: DatagramTransport
+
     local_tunnel_addr: tuple[str, int] | None = None
     src_addr: tuple[str, int] | None = None
     new_data: bytes | None = None
 
-    transport: DatagramTransport
-    forward: DatagramTransport
-
-    def __init__(self, forward_protocol: DatagramProtocol, new_data: bytes) -> None:
-            self.src_addr = forward_protocol.new_tunnel_addr
-            self.forward = forward_protocol.transport
-            self.new_data = new_data
+    def __init__(self, new_data: bytes, src_addr: tuple[str, int], forward: DatagramTransport) -> None:
+        self.new_data = new_data
+        self.src_addr = src_addr
+        self.forward = forward
 
     def connection_made(self, transport) -> None:
         print("proxy tunnel: opened")
@@ -60,6 +64,7 @@ class ProxyTunnelProtocol(DatagramProtocol):
             # ignore the contents and send the initial data
             self.local_tunnel_addr = addr
             self.transport.sendto(self.new_data, addr)
+
 
 class ProxyForwardProtocol(DatagramProtocol):
     transport: DatagramTransport
@@ -86,9 +91,9 @@ class ProxyForwardProtocol(DatagramProtocol):
 
 
 class ProxyRouterProtocol(DatagramProtocol):
-    local_router_addr: tuple[str, int] = [] # linked address. keep this alive the whole time 
-
     transport: DatagramTransport
+
+    local_router_addr: tuple[str, int] = [] # linked address. keep this alive the whole time 
     status: bytes = Command.CLOSED
 
     def connection_made(self, transport):
@@ -159,19 +164,17 @@ async def main_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, i
 
 
 class LocalTunnelProtocol(DatagramProtocol):
-
     transport: DatagramTransport = None
     forward: DatagramTransport = None
 
     def connection_made(self, transport) -> None:
-        print("new tunnel connected")
+        print(f"local tunnel: connected to {transport._address}")
         self.transport = transport
-        print(self.transport._address)
         self.transport.sendto(Command.CONNECT) # confirm connection by sending addr to server
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
         print("local tunnel: data coming from client incoming to service")
-        self.forward.sendto(data)
+        self.forward.sendto(data) # forward it directly to the service
 
 
 class LocalForwardProtocol(DatagramProtocol):
@@ -197,9 +200,9 @@ class LocalRouterProtocol(DatagramProtocol):
     telling when there is a new port to add to the tunnel connections
     """
     transport: DatagramTransport    
-    status: bytes = Command.CLOSED
 
     new_tunnel_port: int | None = None
+    status: bytes = Command.CLOSED
 
     def __retry_handshake(self) -> None:
         print("retrying handshake...")
