@@ -135,7 +135,10 @@ async def main_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, i
 
                 print("waiting for local tunnel address")
                 while not tunnel_protocol.local_tunnel_addr:
-                    await asleep(0.01)
+                    # still keep-alive
+                    if router_protocol.status == Command.SYNACK:
+                        router_transport.sendto(Command.SYNACK, router_protocol.local_router_addr)
+                    await asleep(0.1)
 
                 print("tunnel opened")
                 tunnel_transport.sendto(forward_protocol.new_tunnel_data, tunnel_protocol.local_tunnel_addr)
@@ -143,11 +146,11 @@ async def main_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, i
 
                 forward_transports.append(forward_transport)
                 tunnel_transports.append(tunnel_transport)
-                await asleep(10)
 
             # keep-alive
             if router_protocol.status == Command.SYNACK:
                 router_transport.sendto(Command.SYNACK, router_protocol.local_router_addr)
+
             await asleep(0.1)
     except KeyboardInterrupt:
         # pass along CTRL+C
