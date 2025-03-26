@@ -124,7 +124,7 @@ async def main_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, i
                 tunnel_addr = (forward_addr[0], port)
                 tunnel_cmd = f"{port}".encode("utf-8")
 
-                print("opening tunnel port")
+                print(f"opening tunnel port {port}")
                 tunnel_transport, tunnel_protocol = await udp_bind(ProxyTunnelProtocol, tunnel_addr)
                 tunnel_protocol.src_addr = forward_protocol.new_tunnel_addr
                 tunnel_protocol.forward = forward_transport
