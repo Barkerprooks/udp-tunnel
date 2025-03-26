@@ -239,7 +239,7 @@ class LocalTunnelProtocol(DatagramProtocol):
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
         print("local tunnel: data coming from client incoming to service")
         print(data)
-        self.transport.sendto(data) # forward it di rectly to the service
+        self.forward.sendto(data) # forward it di rectly to the service
 
 class LocalForwardProtocol(DatagramProtocol):
     """
