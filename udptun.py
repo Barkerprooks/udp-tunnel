@@ -248,18 +248,21 @@ class LocalForwardProtocol(DatagramProtocol):
     from the local service back through the tunnel
     """
     transport: DatagramTransport | None = None
-    tunnel: DatagramTransport | None = None
-
-    local_service_addr: tuple[int, str] | None = None 
+    tunnels: dict[int, LocalTunnelProtocol] = {}
 
     def connection_made(self, transport) -> None:
         self.transport = transport
         # self.local_service_addr = transport._address
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
-        print("local forward: data coming from service outgoing to client")
-        print(data)
-        self.tunnel.sendto(data)
+        _, port = addr
+
+        if port in self.tunnels:
+            print("local forward: data coming from service outgoing to client")
+            print(data)
+            self.tunnels[port].transport.sendto(data)
+        else:
+            print(f"port {port} doesnt exist")
 
 
 class LocalRouterProtocol(DatagramProtocol):
@@ -310,9 +313,10 @@ async def run_local_loop(forward_addr: tuple[str, int], connect_addr: tuple[str,
 
     # connect to the routing service
     router_transport, router_protocol = await udp_connect(LocalRouterProtocol, connect_addr)
-    
+    forward_transport, forward_protocol = await udp_connect(LocalForwardProtocol, forward_addr)
+
     # need to keep track of all transports
-    transports: list[DatagramTransport] = [router_transport]
+    transports: dict[int, DatagramProtocol] = [router_transport, forward_transport]
 
     try:
         while True:
@@ -321,15 +325,14 @@ async def run_local_loop(forward_addr: tuple[str, int], connect_addr: tuple[str,
                 print("local: adding new tunnel")
                 tunnel_addr = (connect_addr[0], router_protocol.new_tunnel_port)
 
-                # create the pair of connections
+                # create the tunnel connection
                 tunnel_transport, tunnel_protocol = await udp_connect(LocalTunnelProtocol, tunnel_addr)
-                forward_transport, forward_protocol = await udp_connect(LocalForwardProtocol, forward_addr)
                 
                 # link the new tunnel / forwarder transports
                 tunnel_protocol.forward = forward_transport
-                forward_protocol.tunnel = tunnel_transport
+                forward_protocol.tunnels[router_protocol.new_tunnel_port] = tunnel_protocol
 
-                transports.extend([forward_transport, tunnel_transport])
+                transports.append(tunnel_transport)
                 router_protocol.new_tunnel_port = None
             # async needs a delay to process things
             await asleep(0.1)
