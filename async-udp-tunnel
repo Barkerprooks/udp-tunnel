@@ -88,7 +88,6 @@ class ProxyRouterProtocol(DatagramProtocol):
         self.transport = transport
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
-        print("remote proxy recv: ", data)
         # the only things we send the local router are commands
         if self.status == Command.CLOSED and data == Command.SYN:
             print("RECV: syn, starting handshake")
@@ -214,8 +213,6 @@ class LocalRouterProtocol(DatagramProtocol):
         self.transport.sendto(Command.SYN)
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
-        print("local router recv: ", data)
-
         if len(data) == 1: # router base connection commands
             if self.status == Command.CLOSED and data == Command.ACK:
                 print("RECV: ack, activated")
