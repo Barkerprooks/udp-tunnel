@@ -79,8 +79,9 @@ class ProxyTunnelProtocol(DatagramProtocol):
             self.transport.sendto(self.new_data, addr)
             # transport the new client data through the tunnel as quickly as possible
             self.local_tunnel_addr = addr # after this just listen, the forwarder will handle the rest
-            self.transport.get_extra_info("socket").connect(addr) # call connect?
 
+    def connection_lost(self, exc):
+        print("proxy tunnel: lost connection")
 
 class ProxyForwardProtocol(DatagramProtocol):
     """
@@ -98,19 +99,21 @@ class ProxyForwardProtocol(DatagramProtocol):
         self.transport = transport
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
-        ip, _ = addr
-        
-        if ip not in self.tunnels:
+        if addr not in self.tunnels:
             print("proxy forward recv: must add new client")
             self.new_tunnel_addr = addr
             self.new_tunnel_data = data
             return
 
-        tunnel = self.tunnels[ip]
+        tunnel = self.tunnels[addr]
         if tunnel.local_tunnel_addr:
             print(f"client {addr_to_string(addr)} sending data though {tunnel.local_tunnel_addr}")
             print(data)
             tunnel.transport.sendto(data, tunnel.local_tunnel_addr)
+
+
+    def connection_lost(self, exc):
+        print("proxy forward: lost connection")
 
 
 class ProxyRouterProtocol(DatagramProtocol):
@@ -211,10 +214,12 @@ class LocalTunnelProtocol(DatagramProtocol):
         self.transport.sendto(Command.CONNECT) # confirm connection by sending addr to server
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
-        print("local tunnel: data coming from client incoming to service")
-        print(data)
-        self.forward.sendto(data) # forward it directly to the service
-
+        if self.forward.proxy_tunnel_addr:
+            print("local tunnel: data coming from client incoming to service")
+            print(data)
+            self.forward.sendto(data, self.forward.proxy_tunnel_addr) # forward it di rectly to the service
+        else:
+            print("local tunnel: forwarder not connected for some reason")
 
 class LocalForwardProtocol(DatagramProtocol):
     """
@@ -225,6 +230,8 @@ class LocalForwardProtocol(DatagramProtocol):
     transport: DatagramTransport | None = None
     tunnel: DatagramTransport | None = None
 
+    proxy_tunnel_addr: tuple[str, int] | None = None
+
     def connection_made(self, transport) -> None:
         self.transport = transport
 
@@ -232,6 +239,7 @@ class LocalForwardProtocol(DatagramProtocol):
         print("local forward: data coming from service outgoing to client")
         print(data)
         self.tunnel.sendto(data)
+        self.proxy_tunnel_addr = addr
 
 
 class LocalRouterProtocol(DatagramProtocol):
