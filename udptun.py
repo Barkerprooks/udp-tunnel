@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 
 # created by: Jon Parker Brooks
 # started on: --/--/---- 
@@ -82,6 +82,7 @@ class ProxyTunnelProtocol(DatagramProtocol):
 
     def connection_lost(self, exc):
         print("proxy tunnel: lost connection")
+
 
 class ProxyForwardProtocol(DatagramProtocol):
     """
@@ -239,7 +240,7 @@ class LocalTunnelProtocol(DatagramProtocol):
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
         print("local tunnel: data coming from client incoming to service")
         print(data)
-        self.forward.sendto(data) # forward it di rectly to the service
+        self.forward.sendto(data) # forward it directly to the service
 
 class LocalForwardProtocol(DatagramProtocol):
     """
@@ -248,21 +249,16 @@ class LocalForwardProtocol(DatagramProtocol):
     from the local service back through the tunnel
     """
     transport: DatagramTransport | None = None
-    tunnels: dict[int, LocalTunnelProtocol] = {}
+    tunnel: LocalTunnelProtocol | None = None
 
     def connection_made(self, transport) -> None:
         self.transport = transport
         # self.local_service_addr = transport._address
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
-        _, port = addr
-
-        if port in self.tunnels:
-            print("local forward: data coming from service outgoing to client")
-            print(data)
-            self.tunnels[port].transport.sendto(data)
-        else:
-            print(f"port {port} doesnt exist")
+        print("local forward: data coming from service outgoing to client")
+        print(data)
+        self.tunnel.transport.sendto(data)
 
 
 class LocalRouterProtocol(DatagramProtocol):
@@ -313,7 +309,6 @@ async def run_local_loop(forward_addr: tuple[str, int], connect_addr: tuple[str,
 
     # connect to the routing service
     router_transport, router_protocol = await udp_connect(LocalRouterProtocol, connect_addr)
-    forward_transport, forward_protocol = await udp_connect(LocalForwardProtocol, forward_addr)
 
     # need to keep track of all transports
     transports: dict[int, DatagramProtocol] = [router_transport, forward_transport]
@@ -326,13 +321,14 @@ async def run_local_loop(forward_addr: tuple[str, int], connect_addr: tuple[str,
                 tunnel_addr = (connect_addr[0], router_protocol.new_tunnel_port)
 
                 # create the tunnel connection
+                forward_transport, forward_protocol = await udp_connect(LocalForwardProtocol, forward_addr)
                 tunnel_transport, tunnel_protocol = await udp_connect(LocalTunnelProtocol, tunnel_addr)
-                
+
                 # link the new tunnel / forwarder transports
                 tunnel_protocol.forward = forward_transport
-                forward_protocol.tunnels[router_protocol.new_tunnel_port] = tunnel_protocol
+                forward_protocol.tunnel = tunnel_protocol
 
-                transports.append(tunnel_transport)
+                transports.expand([tunnel_transport, forward_transport])
                 router_protocol.new_tunnel_port = None
             # async needs a delay to process things
             await asleep(0.1)
