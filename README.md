@@ -8,7 +8,7 @@ You just need __Python 3__ installed on both machines, no environments required.
 the script and run it with the desired arguments. Below is a shortcut for downloading the script and
 marking it as executable.
 
-    wget https://raw.githubusercontent.com/Barkerprooks/udp-tunnel/main/udptun.py && chmod +x ./udptun.py
+    wget https://coredumped.info/tools/udptun.py && chmod +x ./udptun.py
 
 ## Forwarding a port
 This script assumes there are two machines involved. The script is required on both machines to function
