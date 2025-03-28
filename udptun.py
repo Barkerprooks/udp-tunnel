@@ -97,8 +97,10 @@ class ProxyForwardProtocol(DatagramProtocol):
         self.transport = transport
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
+        print(self.tunnels)
+
         if addr not in self.tunnels:
-            print("proxy forward recv: must add new client")
+            print(f"proxy forward recv: must add new client {addr_to_string(addr)}")
             self.new_tunnel_addr = addr
             self.new_tunnel_data = data
             return
@@ -166,7 +168,7 @@ async def run_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, in
                 )
 
                 tunnel_transport, tunnel_protocol = await udp_bind(protocol_factory, tunnel_addr)
-                forward_protocol.tunnels[tunnel_addr] = tunnel_protocol
+                forward_protocol.tunnels[forward_protocol.new_tunnel_addr] = tunnel_protocol
 
                 print("proxy: sending connect request")
                 router_transport.sendto(Command.CONNECT + tunnel_cmd, router_protocol.local_router_addr)
@@ -187,28 +189,6 @@ async def run_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, in
         for transport in transports:
             print(f"closing {transport.get_protocol().__class__.__name__}")
             transport.close()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 """
