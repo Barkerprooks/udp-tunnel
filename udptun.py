@@ -1,10 +1,28 @@
 #!/usr/bin/env python3
+"""UDP Tunnel
+    updated on: 03/24/2025
+    github: https://github.com/BarkerProoks/udp-tunnel
+    version: 1.0.0
 
-# title: UDP Tunnel
-# created by: Jon Parker Brooks
-# updated on: 03/24/2025
-# github: BarkerProoks
-# version: 1.0.0
+Copyright 2025 Jon Parker Brooks
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this 
+software and associated documentation files (the “Software”), to deal in the Software 
+without restriction, including without limitation the rights to use, copy, modify, 
+merge, publish, distribute, sublicense, and/or sell copies of the Software, and to 
+permit persons to whom the Software is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice shall be included in all copies 
+or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, 
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A 
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT 
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF 
+CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE 
+OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+"""
 
 
 from asyncio import run, get_running_loop, DatagramTransport, DatagramProtocol
@@ -42,30 +60,29 @@ class ProxyTunnelProtocol(DatagramProtocol):
     This protocol is the binding between a the forwarded port, and the port on the local
     side which handled passing the data to the local service 
     """
-
     transport: DatagramTransport | None = None
     forward: DatagramTransport | None = None
 
-    local_tunnel_addr: tuple[str, int] | None = None
-    src_addr: tuple[str, int] | None = None
+    tunnel_addr: tuple[str, int] | None = None
+    client_addr: tuple[str, int] | None = None
+
     new_data: bytes | None = None
     verbose: bool = False
 
-    def __init__(self, new_data: bytes, src_addr: tuple[str, int], forward: DatagramTransport) -> None:
-        self.new_data = new_data
-        self.src_addr = src_addr
-        self.forward = forward
+    def __init__(self, forward: DatagramProtocol) -> None:
+        self.client_addr = forward.new_client_addr
+        self.client_data = forward.new_client_data
+        self.forward = forward.transport
 
     def connection_made(self, transport) -> None:
         self.transport = transport
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
-
-        if self.local_tunnel_addr:
+        if self.tunnel_addr:
             if self.verbose:
                 print(f"proxy tunnel recv: client <- tunnel <- service")
                 print(data)
-            self.forward.sendto(data, self.src_addr)
+            self.forward.sendto(data, self.client_addr)
         else:
             if self.verbose:
                 print(f"proxy tunnel recv: connected {addr_to_string(addr)}")
@@ -73,7 +90,7 @@ class ProxyTunnelProtocol(DatagramProtocol):
             # ignore the contents and send the initial data
             self.transport.sendto(self.new_data, addr)
             # transport the new client data through the tunnel as quickly as possible
-            self.local_tunnel_addr = addr # after this just listen, the forwarder will handle the rest
+            self.tunnel_addr = addr # after this just listen, the forwarder will handle the rest
 
 
 class ProxyForwardProtocol(DatagramProtocol):
@@ -81,11 +98,11 @@ class ProxyForwardProtocol(DatagramProtocol):
     The protocol responsible for binding to the desired forwarded port and accepting
     datagrams from clients to be forwarded through the tunnel.
     """
-
     transport: DatagramTransport | None = None
 
-    new_tunnel_data: bytes = None
-    new_tunnel_addr: tuple[str, int] = None
+    # first time connection information to pass on
+    new_client_data: bytes = None
+    new_client_addr: tuple[str, int] = None
 
     # Key = IP Address
     tunnels: dict[str, ProxyTunnelProtocol] = {}
@@ -101,16 +118,16 @@ class ProxyForwardProtocol(DatagramProtocol):
         if addr not in self.tunnels:
             if self.verbose:
                 print(f"proxy forward recv: must add new client {addr_to_string(addr)}")
-            self.new_tunnel_addr = addr
-            self.new_tunnel_data = data
+            self.new_client_addr = addr
+            self.new_client_data = data
             return
 
         tunnel = self.tunnels[addr]
-        if tunnel.local_tunnel_addr:
+        if tunnel.tunnel_addr:
             if self.verbose:
                 print(f"proxy forward recv: client -> tunnel -> service")
                 print(data)
-            tunnel.transport.sendto(data, tunnel.local_tunnel_addr)
+            tunnel.transport.sendto(data, tunnel.tunnel_addr)
 
 
 class ProxyRouterProtocol(DatagramProtocol):
@@ -163,11 +180,11 @@ async def run_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, in
 
         print("proxy: connected to local tunnel")
         while router_protocol.status == Command.SYNACK:
-            if forward_protocol.new_tunnel_addr:
+            if forward_protocol.new_client_addr:
                 
-                protocol_factory = lambda: ProxyTunnelProtocol(
-                    forward_protocol.new_tunnel_data,
-                    forward_protocol.new_tunnel_addr,
+                protocol_factory = lambda: ProxyTunnelProtocol(forward_protocol)
+                    forward_protocol.new_client_data,
+                    forward_protocol.new_client_addr,
                     forward_transport
                 )
                 tunnel_addr = (forward_addr[0], 0) # bind on any available port
@@ -178,7 +195,7 @@ async def run_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, in
                 tunnel_transport, tunnel_protocol = await udp_bind(protocol_factory, tunnel_addr)
                 tunnel_protocol.verbose = verbose
 
-                forward_protocol.tunnels[forward_protocol.new_tunnel_addr] = tunnel_protocol
+                forward_protocol.tunnels[forward_protocol.new_client_addr] = tunnel_protocol
 
                 _, port = tunnel_transport.get_extra_info("sockname")
                 tunnel_cmd = f"{port}".encode("utf-8")
@@ -187,8 +204,8 @@ async def run_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, in
                     print(f"proxy: sending connect request for port {port}")
                 router_transport.sendto(Command.CONNECT + tunnel_cmd, router_protocol.local_router_addr)
 
-                forward_protocol.new_tunnel_addr = None
-                forward_protocol.new_tunnel_data = None
+                forward_protocol.new_client_addr = None
+                forward_protocol.new_client_data = None
 
                 transports.append(tunnel_transport)
             # keep-alive
