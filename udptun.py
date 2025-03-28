@@ -335,7 +335,9 @@ async def run_local_loop(forward_addr: tuple[str, int], connect_addr: tuple[str,
 async def main(args) -> None:
     forward_addr = string_to_addr(args.forward)
     match args.mode:
-        case "local": await run_local_loop(forward_addr, string_to_addr(args.connect), args.verbose)
+        case "local": 
+            args.connect = args.connect if ':' in args.connect else f"{args.connect}:4300"
+            await run_local_loop(forward_addr, string_to_addr(args.connect), args.verbose)
         case "proxy": await run_proxy_loop(forward_addr, string_to_addr(args.bind), args.verbose)
 
 
