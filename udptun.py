@@ -12,7 +12,6 @@
 from asyncio import run, get_running_loop, DatagramTransport, DatagramProtocol
 from asyncio import sleep as asleep
 from argparse import ArgumentParser
-from psutil import net_connections
 
 
 def string_to_addr(address: str) -> tuple[str, int]:
@@ -154,27 +153,23 @@ async def run_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, in
     try:
         while True:
             if forward_protocol.new_tunnel_addr:
-                port = slot + 45535
-                # don't conflict with already existing connections
-                while port in [connection.laddr.port for connection in net_connections()]:
-                    slot = (slot + 1) % 20000
-                    port = slot + 45535
-
-                tunnel_addr = (forward_addr[0], port)
-                tunnel_cmd = f"{port}".encode("utf-8")
-
-                print(f"proxy: opening tunnel port {port}")
-
+                
                 protocol_factory = lambda: ProxyTunnelProtocol(
                     forward_protocol.new_tunnel_data,
                     forward_protocol.new_tunnel_addr,
                     forward_transport
                 )
 
+                tunnel_addr = (forward_addr[0], 0) # bind on any available port
+
+                print(f"proxy: opening tunnel port")
                 tunnel_transport, tunnel_protocol = await udp_bind(protocol_factory, tunnel_addr)
                 forward_protocol.tunnels[forward_protocol.new_tunnel_addr] = tunnel_protocol
 
-                print("proxy: sending connect request")
+                port = tunnel_transport._address[1]
+                tunnel_cmd = f"{port}".encode("utf-8")
+
+                print(f"proxy: sending connect request for port {port}")
                 router_transport.sendto(Command.CONNECT + tunnel_cmd, router_protocol.local_router_addr)
 
                 forward_protocol.new_tunnel_addr = None
