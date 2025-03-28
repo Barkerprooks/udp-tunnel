@@ -183,10 +183,6 @@ async def run_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, in
             if forward_protocol.new_client_addr:
                 
                 protocol_factory = lambda: ProxyTunnelProtocol(forward_protocol)
-                    forward_protocol.new_client_data,
-                    forward_protocol.new_client_addr,
-                    forward_transport
-                )
                 tunnel_addr = (forward_addr[0], 0) # bind on any available port
 
                 # open up proxy tunnel
