@@ -89,7 +89,7 @@ class ProxyTunnelProtocol(DatagramProtocol):
         else:
             if self.verbose:
                 print(f"proxy tunnel recv: connected {addr_to_string(addr)}")
-                print(self.client_data_data)
+                print(self.client_data)
             # ignore the contents and send the initial data
             self.transport.sendto(self.client_data, addr)
             # transport the new client data through the tunnel as quickly as possible
