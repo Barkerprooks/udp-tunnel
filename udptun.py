@@ -209,7 +209,7 @@ class LocalTunnelProtocol(DatagramProtocol):
         print(f"local tunnel: connected to {addr_to_string(transport._address)}")
         self.transport = transport
         self.transport.sendto(Command.CONNECT) # confirm connection by sending addr to server
-        self.transport.get_extra_info("socket").socket.connect(transport._address)
+        print(self.transport.get_extra_info("socket"))
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
         print("local tunnel: data coming from client incoming to service")
