@@ -348,8 +348,8 @@ if __name__ == "__main__":
     proxy_subparser = subparsers.add_parser("proxy")
     proxy_subparser.add_argument("-f", "--forward", type=str, required=True,
                                  help="The address to expose to the internet.")
-    proxy_subparser.add_argument("-b", "--bind", type=str, default="127.0.0.1:4300",
-                                 help="The address on which to bind the connection router.")
+    proxy_subparser.add_argument("-b", "--bind", type=str, default="0.0.0.0:4300",
+                                 help="The address on which to bind the connection router. (default: 0.0.0.0:4300)")
     proxy_subparser.add_argument("-v", "--verbose", action="store_true", 
                         help="Print detailed information including transmitted content")
 
