@@ -12,6 +12,7 @@
 from asyncio import run, get_running_loop, DatagramTransport, DatagramProtocol
 from asyncio import sleep as asleep
 from argparse import ArgumentParser
+from psutil import net_connections
 
 
 def string_to_addr(address: str) -> tuple[str, int]:
@@ -154,8 +155,11 @@ async def run_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, in
         while True:
             if forward_protocol.new_tunnel_addr:
                 port = slot + 45535
-                slot = (slot + 1) % 20000
-            
+                # don't conflict with already existing connections
+                while port in [connection.laddr.port for connection in net_connections()]:
+                    slot = (slot + 1) % 20000
+                    port = slot + 45535
+
                 tunnel_addr = (forward_addr[0], port)
                 tunnel_cmd = f"{port}".encode("utf-8")
 
