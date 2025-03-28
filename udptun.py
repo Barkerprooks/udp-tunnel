@@ -209,6 +209,7 @@ class LocalTunnelProtocol(DatagramProtocol):
         print(f"local tunnel: connected to {addr_to_string(transport._address)}")
         self.transport = transport
         self.transport.sendto(Command.CONNECT) # confirm connection by sending addr to server
+        self.transport.get_extra_info("socket").socket.connect(transport._address)
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
         print("local tunnel: data coming from client incoming to service")
@@ -246,6 +247,7 @@ class LocalRouterProtocol(DatagramProtocol):
 
     def __retry_handshake(self) -> None:
         self.transport.sendto(Command.SYN)
+        print('local router: retrying hadnshake')
 
     def connection_made(self, transport: DatagramTransport) -> None:
         print(f'local router: sending initial handshake...')
