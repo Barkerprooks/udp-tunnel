@@ -148,8 +148,6 @@ async def run_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, in
     # need to keep track of all connections so we can sever them gracefully
     transports: list[DatagramTransport] = [forward_transport]
 
-    slot = 0 # use rolling number to assign ports
-
     try:
         while True:
             if forward_protocol.new_tunnel_addr:
