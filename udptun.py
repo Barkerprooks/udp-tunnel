@@ -164,7 +164,7 @@ async def run_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, in
                 tunnel_transport, tunnel_protocol = await udp_bind(protocol_factory, tunnel_addr)
                 forward_protocol.tunnels[forward_protocol.new_tunnel_addr] = tunnel_protocol
 
-                port = tunnel_transport._address[1]
+                _, port = tunnel_transport.get_extra_info("sockname")
                 tunnel_cmd = f"{port}".encode("utf-8")
 
                 print(f"proxy: sending connect request for port {port}")
