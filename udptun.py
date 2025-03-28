@@ -63,10 +63,13 @@ class ProxyTunnelProtocol(DatagramProtocol):
     transport: DatagramTransport | None = None
     forward: DatagramTransport | None = None
 
+    # for initial connection
     tunnel_addr: tuple[str, int] | None = None
-    client_addr: tuple[str, int] | None = None
+    client_data: bytes | None = None
 
-    new_data: bytes | None = None
+    # persistent connection
+    client_addr: tuple[str, int] | None = None
+    
     verbose: bool = False
 
     def __init__(self, forward: DatagramProtocol) -> None:
@@ -86,9 +89,9 @@ class ProxyTunnelProtocol(DatagramProtocol):
         else:
             if self.verbose:
                 print(f"proxy tunnel recv: connected {addr_to_string(addr)}")
-                print(self.new_data)
+                print(self.client_data_data)
             # ignore the contents and send the initial data
-            self.transport.sendto(self.new_data, addr)
+            self.transport.sendto(self.client_data, addr)
             # transport the new client data through the tunnel as quickly as possible
             self.tunnel_addr = addr # after this just listen, the forwarder will handle the rest
 
@@ -106,6 +109,7 @@ class ProxyForwardProtocol(DatagramProtocol):
 
     # Key = IP Address
     tunnels: dict[str, ProxyTunnelProtocol] = {}
+
     verbose: bool = False
 
     def connection_made(self, transport):
@@ -139,6 +143,7 @@ class ProxyRouterProtocol(DatagramProtocol):
 
     local_router_addr: tuple[str, int] | None = None # linked address. keep this alive the whole time 
     status: bytes = Command.CLOSED
+
     verbose: bool = False
 
     def connection_made(self, transport):
@@ -223,8 +228,9 @@ class LocalTunnelProtocol(DatagramProtocol):
     proxy. It will take the data sent from the client over the proxy and pass it to the
     local listening service.
     """
-    transport: DatagramTransport = None
-    forward: DatagramTransport = None
+    transport: DatagramTransport | None = None
+    forward: DatagramTransport | None= None
+
     verbose: bool = False
 
     def connection_made(self, transport) -> None:
@@ -269,6 +275,7 @@ class LocalRouterProtocol(DatagramProtocol):
 
     new_tunnel_port: int | None = None
     status: bytes = Command.CLOSED
+    
     verbose: bool = False
 
     def connection_made(self, transport: DatagramTransport) -> None:
