@@ -245,10 +245,6 @@ class LocalRouterProtocol(DatagramProtocol):
     new_tunnel_port: int | None = None
     status: bytes = Command.CLOSED
 
-    def __retry_handshake(self) -> None:
-        self.transport.sendto(Command.SYN)
-        print('local router: retrying hadnshake')
-
     def connection_made(self, transport: DatagramTransport) -> None:
         print(f'local router: sending initial handshake...')
         self.transport = transport
@@ -268,16 +264,6 @@ class LocalRouterProtocol(DatagramProtocol):
                 # if this is not a number we have a real issue >:(
                 self.new_tunnel_port = int(data[1:])
 
-    def connection_lost(self, exc):
-        if self.status != Command.SYNACK:
-            self.status = Command.CLOSED
-            self.__retry_handshake()
-
-    def error_received(self, exc):
-        if self.status != Command.SYNACK:
-            self.status = Command.CLOSED
-            self.__retry_handshake()
-
 
 async def run_local_loop(forward_addr: tuple[str, int], connect_addr: tuple[str, int]) -> None:
     print(f"local: running egress tunnel [{addr_to_string(forward_addr)} => {addr_to_string(connect_addr)}]")
@@ -289,7 +275,12 @@ async def run_local_loop(forward_addr: tuple[str, int], connect_addr: tuple[str,
     transports: dict[int, DatagramProtocol] = [router_transport]
 
     try:
-        while True:
+        while not router_protocol.status == Command.SYNACK:
+            print("local: retrying handshake...")
+            router_transport.sendto(Command.SYN)
+            await asleep(1)
+
+        while router_protocol.status == Command.SYNACK: # while we're connected
             # this not being None indicates a new connection
             if router_protocol.new_tunnel_port is not None:
                 print("local: adding new tunnel")
