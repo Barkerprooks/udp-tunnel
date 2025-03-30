@@ -77,7 +77,7 @@ class ProxyTunnelProtocol(DatagramProtocol):
         self.client_data = forward.new_client_data
         self.forward = forward.transport
 
-    def connection_made(self, transport) -> None:
+    def connection_made(self, transport: DatagramTransport) -> None:
         self.transport = transport
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
@@ -112,7 +112,7 @@ class ProxyForwardProtocol(DatagramProtocol):
 
     verbose: bool = False
 
-    def connection_made(self, transport):
+    def connection_made(self, transport: DatagramTransport) -> None:
         if self.verbose:
             address = self.transport.get_extra_info("sockname")
             print(f"proxy tunnel: opened on {address}")
@@ -146,7 +146,7 @@ class ProxyRouterProtocol(DatagramProtocol):
 
     verbose: bool = False
 
-    def connection_made(self, transport):
+    def connection_made(self, transport: DatagramTransport) -> None:
         if self.verbose:
             print("proxy router: waiting for initial handshake...")
         self.transport = transport
@@ -233,13 +233,13 @@ class LocalTunnelProtocol(DatagramProtocol):
 
     verbose: bool = False
 
-    def connection_made(self, transport) -> None:
+    def connection_made(self, transport: DatagramTransport) -> None:
         if self.verbose:
             print(f"local tunnel: connected to {addr_to_string(transport._address)}")
         self.transport = transport
         self.transport.sendto(Command.CONNECT) # confirm connection by sending addr to server
 
-    def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
+    def datagram_received(self, data: bytes, _) -> None:
         if self.verbose:
             print("local tunnel recv: service <- tunnel <- client")
             print(data)
@@ -256,7 +256,7 @@ class LocalForwardProtocol(DatagramProtocol):
     tunnel: LocalTunnelProtocol | None = None
     verbose: bool = False
 
-    def connection_made(self, transport) -> None:
+    def connection_made(self, transport: DatagramTransport) -> None:
         self.transport = transport
 
     def datagram_received(self, data: bytes, _) -> None:
