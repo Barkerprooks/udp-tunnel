@@ -288,7 +288,7 @@ class LocalRouterProtocol(DatagramProtocol):
         if len(data) == 1: # router base connection commands
             if self.status == Command.CLOSED and data == Command.ACK:
                 if self.verbose:
-                    print("local router recv: handshake complete")
+                    print("local router recv: ack, handshake complete")
                 self.status = Command.SYNACK # we acknowledge and send
                 self.transport.sendto(Command.SYNACK)
             if self.status == Command.SYNACK and data == Command.SYNACK:
@@ -331,8 +331,7 @@ async def run_local_loop(forward_addr: tuple[str, int], connect_addr: tuple[str,
                 forward_transport, forward_protocol = await udp_connect(LocalForwardProtocol, forward_addr)
                 tunnel_transport, tunnel_protocol = await udp_connect(LocalTunnelProtocol, tunnel_addr)
 
-                forward_protocol.verbose = verbose
-                tunnel_protocol.verbose = verbose
+                forward_protocol.verbose = tunnel_protocol.verbose = verbose
 
                 # link the new tunnel / forwarder transports
                 tunnel_protocol.forward = forward_transport
@@ -364,7 +363,6 @@ async def main(args) -> None:
 if __name__ == "__main__":
     parser = ArgumentParser()
     subparsers = parser.add_subparsers(dest="mode", required=True)
-
     proxy_subparser = subparsers.add_parser("proxy")
     proxy_subparser.add_argument("-f", "--forward", type=str, required=True,
                                  help="The address to expose to the internet.")
@@ -372,7 +370,6 @@ if __name__ == "__main__":
                                  help="The address on which to bind the connection router. (default: 0.0.0.0:4300)")
     proxy_subparser.add_argument("-v", "--verbose", action="store_true", 
                         help="Print detailed information including transmitted content")
-
     local_subparser = subparsers.add_parser("local")
     local_subparser.add_argument("-f", "--forward", type=str, required=True,
                                  help="The address to expose to the internet.")
@@ -380,7 +377,6 @@ if __name__ == "__main__":
                                  help="The address to connect to for routing connections.")
     local_subparser.add_argument("-v", "--verbose", action="store_true", 
                         help="Print detailed information including transmitted content")
-
     try:
         run(main(parser.parse_args()))
     except KeyboardInterrupt:
