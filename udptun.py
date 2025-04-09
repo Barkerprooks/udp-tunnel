@@ -28,6 +28,7 @@ OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 from asyncio import run, get_running_loop, DatagramTransport, DatagramProtocol
 from asyncio import sleep as asleep
 from argparse import ArgumentParser
+import time
 
 
 def string_to_addr(address: str) -> tuple[str, int]:
@@ -107,18 +108,22 @@ class ProxyForwardProtocol(DatagramProtocol):
     new_client_data: bytes = None
     new_client_addr: tuple[str, int] = None
 
+    last_interaction: int = 0
+
     # Key = IP Address
     tunnels: dict[str, ProxyTunnelProtocol] = {}
 
     verbose: bool = False
 
     def connection_made(self, transport: DatagramTransport) -> None:
+        self.last_interaction = time.time()
         if self.verbose:
             address = self.transport.get_extra_info("sockname")
             print(f"proxy tunnel: opened on {address}")
         self.transport = transport
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
+        self.last_interaction = time.time()
         if addr not in self.tunnels:
             if self.verbose:
                 print(f"proxy forward recv: must add new client {addr_to_string(addr)}")
@@ -177,6 +182,9 @@ async def run_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, in
 
     # need to keep track of all connections so we can sever them gracefully
     transports: list[DatagramTransport] = [forward_transport, router_transport]
+    
+    # keep track of the tunnel protocols to know if we should close a connection
+    tunnel_protocols: list[DatagramProtocol] = []
 
     try:
         print("proxy: waiting for local tunnel to connect...")
@@ -209,8 +217,17 @@ async def run_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, in
                 forward_protocol.new_client_data = None
 
                 transports.append(tunnel_transport)
+                tunnel_protocols.append(tunnel_protocol)
+            
             # keep-alive
             router_transport.sendto(Command.SYNACK, router_protocol.local_router_addr)
+
+            # check to see if any clients should be disconnected (no interaction for >30 minutes)
+            for protocol in tunnel_protocols:
+                if time.time() - protocol.last_interaction > 10:
+                    print(f'disconnecting {protocol.transport.get_extra_info("sockname")}')
+                    protocol.transport.close()
+
             await asleep(0.1)
     except KeyboardInterrupt:
         raise KeyboardInterrupt
@@ -244,6 +261,11 @@ class LocalTunnelProtocol(DatagramProtocol):
             print("local tunnel recv: service <- tunnel <- client")
             print(data)
         self.forward.sendto(data) # forward it directly to the service
+
+    def connection_lost(self, exc):
+        print("server disconnect worked!")
+        # close the linked transport
+        self.forward.close()
 
 
 class LocalForwardProtocol(DatagramProtocol):
