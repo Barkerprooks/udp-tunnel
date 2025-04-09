@@ -171,7 +171,7 @@ class ProxyRouterProtocol(DatagramProtocol):
             self.transport.sendto(self.status, addr)
             self.local_router_addr = addr # SYNACK means we've completed handshake
 
-    def proxy_send(self, command: Command, tunnel_transport: DatagramTransport) -> None:
+    def proxy_send_command(self, command: Command, tunnel_transport: DatagramTransport) -> None:
         _, port = tunnel_transport.get_extra_info("sockname")
         tunnel_cmd = f"{port}".encode("utf-8")
         v_print(self.verbose, f"proxy: sending connect request for port {port}")
@@ -323,6 +323,8 @@ class LocalRouterProtocol(DatagramProtocol):
         elif len(data) > 1:
             v_print(self.verbose, "local router recv: incoming connection request")
             command, port = bytes(data[0]), int(data[1:])
+            print(command)
+            print(Command.CONNECT)
             match bytes(command):
                 case Command.CONNECT:
                     v_print(f"connection request for port {port}")
