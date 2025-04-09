@@ -322,7 +322,7 @@ class LocalRouterProtocol(DatagramProtocol):
                 self.transport.sendto(self.status) # respond to keep-alive
         elif len(data) > 1:
             v_print(self.verbose, "local router recv: incoming connection request")
-            command, port = bytes(data[0]), int(data[1:])
+            command, port = bytes([data[0]]), int(data[1:])
             print(command)
             print(Command.CONNECT)
             match bytes(command):
