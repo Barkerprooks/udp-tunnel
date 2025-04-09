@@ -303,7 +303,7 @@ class LocalRouterProtocol(DatagramProtocol):
     new_tunnel_port: int | None = None
     status: bytes = Command.CLOSED
     
-    expired_connections: list[int]
+    expired_connections: list[int] = []
 
     verbose: bool = False
 
@@ -323,8 +323,6 @@ class LocalRouterProtocol(DatagramProtocol):
         elif len(data) > 1:
             v_print(self.verbose, "local router recv: incoming connection request")
             command, port = bytes([data[0]]), int(data[1:])
-            print(command)
-            print(Command.CONNECT)
             match bytes(command):
                 case Command.CONNECT:
                     v_print(f"connection request for port {port}")
@@ -343,6 +341,9 @@ async def run_local_loop(forward_addr: tuple[str, int], connect_addr: tuple[str,
 
     # need to keep track of all transports
     transports: list[DatagramTransport] = [router_transport]
+    
+    # map of port => (tunnel, forward) entries that we need in order to close expired connections
+    connections: dict[int, tuple[DatagramTransport, DatagramTransport]] = {}
 
     try:
         print("local: attempting handshake...")
@@ -368,8 +369,16 @@ async def run_local_loop(forward_addr: tuple[str, int], connect_addr: tuple[str,
                 tunnel_protocol.forward = forward_transport
                 forward_protocol.tunnel = tunnel_protocol
 
+                connections[router_protocol.new_tunnel_port] = (tunnel_transport, forward_transport)
                 transports.extend([tunnel_transport, forward_transport])
                 router_protocol.new_tunnel_port = None
+            
+            for port in router_protocol.expired_connections:
+                print(f"closing the tunnel for port {port}")
+                tunnel_transport, forward_transport = connections[port]
+                forward_transport.close()
+                tunnel_transport.close()
+            
             # async needs a delay to process things
             await sleep(0.1)
     except KeyboardInterrupt:
