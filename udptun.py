@@ -376,6 +376,8 @@ async def run_local_loop(forward_addr: tuple[str, int], connect_addr: tuple[str,
             for port in router_protocol.expired_connections:
                 print(f"closing the tunnel for port {port}")
                 tunnel_transport, forward_transport = connections[port]
+                transports.remove(forward_transport)
+                transports.remove(tunnel_transport)
                 forward_transport.close()
                 tunnel_transport.close()
             
