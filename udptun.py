@@ -126,6 +126,8 @@ class ProxyForwardProtocol(DatagramProtocol):
         self.transport = transport
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
+        v_print(self.verbose, f"proxy forward recv:\n{data}")
+
         if addr not in self.tunnels:
             v_print(self.verbose, f"proxy forward recv: must add new client {addr_to_string(addr)}")
             self.new_client_addr = addr
