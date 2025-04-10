@@ -301,15 +301,18 @@ class LocalRouterProtocol(DatagramProtocol):
     status: bytes = Command.CLOSED
     
     expired_connections: list[int] = []
+    last_interaction: int = 0
 
     verbose: bool = False
 
     def connection_made(self, transport: DatagramTransport) -> None:
+        self.last_interaction = time.time()
         v_print(self.verbose, 'local router: sending initial handshake...')
         self.transport = transport
         self.transport.sendto(Command.SYN)
 
     def datagram_received(self, data: bytes, _) -> None:
+        self.last_interaction = time.time()
         if len(data) == 1: # router base connection commands
             if self.status == Command.CLOSED and data == Command.ACK:
                 v_print(self.verbose, "local router recv: ack, handshake complete")
@@ -318,7 +321,6 @@ class LocalRouterProtocol(DatagramProtocol):
             if self.status == Command.SYNACK and data == Command.SYNACK:
                 self.transport.sendto(self.status) # respond to keep-alive
         elif len(data) > 1:
-            v_print(self.verbose, "local router recv: incoming connection request")
             command, port = bytes([data[0]]), int(data[1:])
             match bytes(command):
                 case Command.CONNECT:
