@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""UDP Tunnel
+__version__ = "1.1.0"
+f"""UDP Tunnel
     created on: 03/24/2025
     github: https://github.com/BarkerProoks/udp-tunnel
-    version: 1.1.0
+    version: {__version__}
 
 Copyright 2025 Jon Parker Brooks
 
@@ -29,6 +30,7 @@ from asyncio import run, get_running_loop, DatagramTransport, DatagramProtocol
 from argparse import ArgumentParser
 from asyncio import sleep
 import time
+import sys
 
 
 def v_print(verbose: bool = False, *args, **kwargs) -> None:
@@ -397,6 +399,10 @@ async def run_local_loop(forward_addr: tuple[str, int], connect_addr: tuple[str,
 
 
 async def main(args) -> None:
+    if args.version:
+        print("udptun", __version__)
+        return
+
     forward_addr = string_to_addr(args.forward)
     match args.mode:
         case "local": 
@@ -407,7 +413,9 @@ async def main(args) -> None:
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    subparsers = parser.add_subparsers(dest="mode", required=True)
+    parser.add_argument("-V", "--version", action="store_true", help="Prints the version")
+
+    subparsers = parser.add_subparsers(dest="mode", required="-V" not in sys.argv and "--version" not in sys.argv)
     
     proxy_subparser = subparsers.add_parser("proxy")
     proxy_subparser.add_argument("-f", "--forward", type=str, required=True,
