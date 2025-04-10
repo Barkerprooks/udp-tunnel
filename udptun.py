@@ -224,8 +224,8 @@ async def run_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, in
             # check to see if any clients should be disconnected (no interaction for >30 minutes)
             expired_connections = []
             for address, protocol in forward_protocol.tunnels.items():
-                if time.time() - protocol.last_interaction > 10:
-                    v_print(verbose, f'disconnecting {address}')
+                if time.time() - protocol.last_interaction > 30:
+                    v_print(verbose, f'disconnecting {address}, 30s since last interaction')
                     router_protocol.proxy_send_command(Command.TIMEOUT, tunnel_transport)
                     expired_connections.append(address)
                     transports.remove(protocol.transport)
@@ -374,7 +374,7 @@ async def run_local_loop(forward_addr: tuple[str, int], connect_addr: tuple[str,
                 router_protocol.new_tunnel_port = None
             
             for port in router_protocol.expired_connections:
-                print(f"closing the tunnel for port {port}")
+                print(f"closing the tunnel for port {port} due to timeout")
                 tunnel_transport, forward_transport = connections[port]
                 transports.remove(forward_transport)
                 transports.remove(tunnel_transport)
