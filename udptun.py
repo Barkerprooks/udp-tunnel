@@ -239,7 +239,6 @@ async def run_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, in
                 raise TimeoutError("Local router didn't respond for 30s, timeout exceded")
 
             # keep-alive
-            v_print(verbose, "proxy: sending heartbeat request")
             router_transport.sendto(Command.SYNACK, router_protocol.local_router_addr)
 
             await sleep(0.1)
@@ -320,7 +319,6 @@ class LocalRouterProtocol(DatagramProtocol):
                 self.status = Command.SYNACK # we acknowledge and send
                 self.transport.sendto(Command.SYNACK)
             if self.status == Command.SYNACK and data == Command.SYNACK:
-                v_print(self.verbose, "local router recv: heartbeat request")
                 self.transport.sendto(self.status) # respond to keep-alive
         elif len(data) > 1:
             command, port = bytes([data[0]]), int(data[1:])
