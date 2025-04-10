@@ -380,6 +380,9 @@ async def run_local_loop(forward_addr: tuple[str, int], connect_addr: tuple[str,
                 tunnel_transport.close()
                 router_protocol.expired_connections.clear()
             
+            if time.time() - router_protocol.last_interaction > 30:
+                raise TimeoutError("Proxy router didn't respond for 30s, timeout exceded")
+
             # async needs a delay to process things
             await sleep(0.1)
     except KeyboardInterrupt:
