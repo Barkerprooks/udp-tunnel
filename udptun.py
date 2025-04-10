@@ -239,6 +239,7 @@ async def run_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, in
                 raise TimeoutError("Local router didn't respond for 30s, timeout exceded")
 
             # keep-alive
+            v_print(verbose, "proxy: sending heartbeat request")
             router_transport.sendto(Command.SYNACK, router_protocol.local_router_addr)
 
             await sleep(0.1)
@@ -319,6 +320,7 @@ class LocalRouterProtocol(DatagramProtocol):
                 self.status = Command.SYNACK # we acknowledge and send
                 self.transport.sendto(Command.SYNACK)
             if self.status == Command.SYNACK and data == Command.SYNACK:
+                v_print(self.verbose, "local router recv: heartbeat request")
                 self.transport.sendto(self.status) # respond to keep-alive
         elif len(data) > 1:
             command, port = bytes([data[0]]), int(data[1:])
@@ -408,6 +410,7 @@ async def main(args) -> None:
 if __name__ == "__main__":
     parser = ArgumentParser()
     subparsers = parser.add_subparsers(dest="mode", required=True)
+    
     proxy_subparser = subparsers.add_parser("proxy")
     proxy_subparser.add_argument("-f", "--forward", type=str, required=True,
                                  help="The address to expose to the internet.")
@@ -415,6 +418,7 @@ if __name__ == "__main__":
                                  help="The address on which to bind the connection router. (default: 0.0.0.0:4300)")
     proxy_subparser.add_argument("-v", "--verbose", action="store_true", 
                         help="Print detailed information including transmitted content")
+    
     local_subparser = subparsers.add_parser("local")
     local_subparser.add_argument("-f", "--forward", type=str, required=True,
                                  help="The address to expose to the internet.")
