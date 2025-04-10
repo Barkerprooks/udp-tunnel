@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """UDP Tunnel
-    updated on: 03/24/2025
+    created on: 03/24/2025
     github: https://github.com/BarkerProoks/udp-tunnel
-    version: 1.0.0 min
+    version: 1.1.0-min
 
 Copyright 2025 Jon Parker Brooks
 
@@ -26,8 +26,9 @@ OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
 from asyncio import run, get_running_loop, DatagramTransport, DatagramProtocol
-from asyncio import sleep as asleep
 from argparse import ArgumentParser
+from asyncio import sleep
+import time
 
 
 def string_to_addr(address: str) -> tuple[str, int]:
@@ -53,6 +54,7 @@ class Command:
     SYNACK:  bytes = b"\x22"
     CLOSED:  bytes = b"\x03"
     CONNECT: bytes = b"\x05"
+    TIMEOUT: bytes = b"\x04"
 
 
 class ProxyTunnelProtocol(DatagramProtocol):
@@ -67,22 +69,28 @@ class ProxyTunnelProtocol(DatagramProtocol):
     tunnel_addr: tuple[str, int] | None = None
     client_data: bytes | None = None
 
+    # timestamp of the last time packets were sent by the service or client
+    last_interaction: int = 0
+
     # persistent connection
     client_addr: tuple[str, int] | None = None
     
     def __init__(self, forward: DatagramProtocol) -> None:
+        self.last_interaction = time.time()
         self.client_addr = forward.new_client_addr
         self.client_data = forward.new_client_data
         self.forward = forward.transport
 
     def connection_made(self, transport: DatagramTransport) -> None:
+        self.last_interaction = time.time()
         self.transport = transport
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
+        self.last_interaction = time.time()
         if self.tunnel_addr:
             self.forward.sendto(data, self.client_addr)
         else:
-            # ignore the contents and send the initial data
+            # ignore the contents and send the initial datas
             self.transport.sendto(self.client_data, addr)
             # transport the new client data through the tunnel as quickly as possible
             self.tunnel_addr = addr # after this just listen, the forwarder will handle the rest
@@ -113,6 +121,7 @@ class ProxyForwardProtocol(DatagramProtocol):
 
         tunnel = self.tunnels[addr]
         if tunnel.tunnel_addr:
+            tunnel.last_interaction = time.time()
             tunnel.transport.sendto(data, tunnel.tunnel_addr)
 
 
@@ -126,10 +135,14 @@ class ProxyRouterProtocol(DatagramProtocol):
     local_router_addr: tuple[str, int] | None = None # linked address. keep this alive the whole time 
     status: bytes = Command.CLOSED
 
+    last_interaction: int = 0
+
     def connection_made(self, transport: DatagramTransport) -> None:
+        self.last_interaction = time.time()
         self.transport = transport
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
+        self.last_interaction = time.time()
         # the only things we send the local router are commands
         if self.status == Command.CLOSED and data == Command.SYN:
             self.status = Command.ACK
@@ -139,6 +152,11 @@ class ProxyRouterProtocol(DatagramProtocol):
             self.transport.sendto(self.status, addr)
             self.local_router_addr = addr # SYNACK means we've completed handshake
 
+    def proxy_send_command(self, command: Command, tunnel_transport: DatagramTransport) -> None:
+        _, port = tunnel_transport.get_extra_info("sockname")
+        tunnel_cmd = f"{port}".encode("utf-8")
+        self.transport.sendto(command + tunnel_cmd, self.local_router_addr)
+
 
 async def run_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, int]) -> None:
     print(f"proxy: running ingress tunnel [{addr_to_string(forward_addr)} => {addr_to_string(bind_addr)}]")
@@ -147,18 +165,21 @@ async def run_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, in
     forward_transport, forward_protocol = await udp_bind(ProxyForwardProtocol, forward_addr)
     router_transport, router_protocol = await udp_bind(ProxyRouterProtocol, bind_addr)
 
+
     # need to keep track of all connections so we can sever them gracefully
     transports: list[DatagramTransport] = [forward_transport, router_transport]
+    
+    # keep track of the tunnel protocols to know if we should close a connection
+    tunnel_protocols: list[DatagramProtocol] = []
 
     try:
         print("proxy: waiting for local tunnel to connect...")
         while not router_protocol.status == Command.SYNACK:
-            await asleep(0.1) # wait until connected
+            await sleep(0.1) # wait until connected
 
         print("proxy: connected to local tunnel")
         while router_protocol.status == Command.SYNACK:
             if forward_protocol.new_client_addr:
-                
                 protocol_factory = lambda: ProxyTunnelProtocol(forward_protocol)
                 tunnel_addr = (forward_addr[0], 0) # bind on any available port
 
@@ -167,18 +188,34 @@ async def run_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, in
 
                 forward_protocol.tunnels[forward_protocol.new_client_addr] = tunnel_protocol
 
-                _, port = tunnel_transport.get_extra_info("sockname")
-                tunnel_cmd = f"{port}".encode("utf-8")
-
-                router_transport.sendto(Command.CONNECT + tunnel_cmd, router_protocol.local_router_addr)
+                router_protocol.proxy_send_command(Command.CONNECT, tunnel_transport)
 
                 forward_protocol.new_client_addr = None
                 forward_protocol.new_client_data = None
 
                 transports.append(tunnel_transport)
+                tunnel_protocols.append(tunnel_protocol)
+            
+            # check to see if any clients should be disconnected (no interaction for >30 minutes)
+            expired_connections = []
+            for address, protocol in forward_protocol.tunnels.items():
+                if time.time() - protocol.last_interaction > 30:
+                    router_protocol.proxy_send_command(Command.TIMEOUT, tunnel_transport)
+                    expired_connections.append(address)
+                    transports.remove(protocol.transport)
+                    protocol.transport.close()
+            
+            for address in expired_connections:
+                del forward_protocol.tunnels[address]
+
+            # if the heartbeat hasn't been seen in 30s, close the service
+            if time.time() - router_protocol.last_interaction > 30:
+                raise TimeoutError("Local router didn't respond for 30s, timeout exceded")
+
             # keep-alive
             router_transport.sendto(Command.SYNACK, router_protocol.local_router_addr)
-            await asleep(0.1)
+
+            await sleep(0.1)
     except KeyboardInterrupt:
         raise KeyboardInterrupt
     finally:
@@ -194,7 +231,7 @@ class LocalTunnelProtocol(DatagramProtocol):
     local listening service.
     """
     transport: DatagramTransport | None = None
-    forward: DatagramTransport | None= None
+    forward: DatagramTransport | None = None
 
     def connection_made(self, transport: DatagramTransport) -> None:
         self.transport = transport
@@ -230,21 +267,29 @@ class LocalRouterProtocol(DatagramProtocol):
     new_tunnel_port: int | None = None
     status: bytes = Command.CLOSED
     
+    expired_connections: list[int] = []
+    last_interaction: int = 0
+
     def connection_made(self, transport: DatagramTransport) -> None:
+        self.last_interaction = time.time()
         self.transport = transport
         self.transport.sendto(Command.SYN)
 
     def datagram_received(self, data: bytes, _) -> None:
+        self.last_interaction = time.time()
         if len(data) == 1: # router base connection commands
             if self.status == Command.CLOSED and data == Command.ACK:
                 self.status = Command.SYNACK # we acknowledge and send
                 self.transport.sendto(Command.SYNACK)
             if self.status == Command.SYNACK and data == Command.SYNACK:
                 self.transport.sendto(self.status) # respond to keep-alive
-        elif len(data) > 1: # tunnel connect is the only command longer than 1 byte
-            if data[0] == Command.CONNECT[0]:
-                # if this is not a number we have a real issue >:(
-                self.new_tunnel_port = int(data[1:])
+        elif len(data) > 1:
+            command, port = bytes([data[0]]), int(data[1:])
+            match bytes(command):
+                case Command.CONNECT:
+                    self.new_tunnel_port = port
+                case Command.TIMEOUT:
+                    self.expired_connections.append(port)
 
 
 async def run_local_loop(forward_addr: tuple[str, int], connect_addr: tuple[str, int]) -> None:
@@ -255,12 +300,15 @@ async def run_local_loop(forward_addr: tuple[str, int], connect_addr: tuple[str,
 
     # need to keep track of all transports
     transports: list[DatagramTransport] = [router_transport]
+    
+    # map of port => (tunnel, forward) entries that we need in order to close expired connections
+    connections: dict[int, tuple[DatagramTransport, DatagramTransport]] = {}
 
     try:
         print("local: attempting handshake...")
         while not router_protocol.status == Command.SYNACK:
             router_transport.sendto(Command.SYN)
-            await asleep(1)
+            await sleep(1)
 
         print("local: connected to proxy")
         while router_protocol.status == Command.SYNACK: # while we're connected
@@ -276,10 +324,25 @@ async def run_local_loop(forward_addr: tuple[str, int], connect_addr: tuple[str,
                 tunnel_protocol.forward = forward_transport
                 forward_protocol.tunnel = tunnel_protocol
 
-                transports.extend([tunnel_transport, forward_transport])
+                connections[router_protocol.new_tunnel_port] = (tunnel_transport, forward_transport)
+                transports.append(tunnel_transport)
+                transports.append(forward_transport)
                 router_protocol.new_tunnel_port = None
+            
+            for port in router_protocol.expired_connections:
+                print(f"closing the tunnel for port {port} due to timeout")
+                tunnel_transport, forward_transport = connections[port]
+                transports.remove(forward_transport)
+                transports.remove(tunnel_transport)
+                forward_transport.close()
+                tunnel_transport.close()
+                router_protocol.expired_connections.clear()
+            
+            if time.time() - router_protocol.last_interaction > 30:
+                raise TimeoutError("Proxy router didn't respond for 30s, timeout exceded")
+
             # async needs a delay to process things
-            await asleep(0.1)
+            await sleep(0.1)
     except KeyboardInterrupt:
         raise KeyboardInterrupt
     finally:
