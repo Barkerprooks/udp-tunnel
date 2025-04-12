@@ -34,10 +34,3 @@ forward traffic. The default port will be used unless otherwise specified.
     ./udptun.py local --forward 127.0.0.1:4321 --connect example.com
 
 This will begin a handshake process that connects the two ends of the tunnel together.
-
-### Lite version
-This version has had all the debug print statements removed. `--verbose` has been removed 
-from this version. Just removed some O(1) operations for slimmer processing. Use this
-version if you want the most performance possible.
-
-    wget https://coredumped.info/tools/udptun.min.py
