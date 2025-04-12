@@ -368,16 +368,18 @@ async def run_local_loop(forward_addr: tuple[str, int], connect_addr: tuple[str,
                 tunnel_protocol.forward = forward_transport
                 forward_protocol.tunnel = tunnel_protocol
 
-                connections[router_protocol.new_tunnel_port] = (tunnel_transport, forward_transport)
-                transports.append(tunnel_transport)
-                transports.append(forward_transport)
+                transport_pair = (tunnel_transport, forward_transport)
+                connections[router_protocol.new_tunnel_port] = transport_pair
+                transports.extend(transport_pair)
                 router_protocol.new_tunnel_port = None
             
             for port in router_protocol.expired_connections:
                 print(f"closing the tunnel for port {port} due to timeout")
                 tunnel_transport, forward_transport = connections[port]
-                transports.remove(forward_transport)
-                transports.remove(tunnel_transport)
+                if forward_transport in transports:
+                    transports.remove(forward_transport)
+                if tunnel_transport in transports:
+                    transports.remove(tunnel_transport)
                 forward_transport.close()
                 tunnel_transport.close()
                 router_protocol.expired_connections.clear()
