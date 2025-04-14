@@ -16,6 +16,7 @@ sed '/verbose_print\b/d'               |
 sed '/^[[:space:]]*#/d'                |
 sed '/--verbose\b/d'                   |
 sed 's/#.*$//'                         |
-sed '/^$/d' > $udptun_min
+sed '/^$/d'                            |
+sed '1s/^/#!\/usr\/bin\/env python3\n/' > $udptun_min
 
 chmod +x $udptun_min
