@@ -36,8 +36,7 @@ __verbose_output: bool = False
 
 
 def verbose_print(*args, **kwargs) -> None:
-    if __verbose_output:
-        print(*args, **kwargs)
+    if __verbose_output: print(*args, **kwargs) # must be on the same line for minification to work ;)
 
 
 def string_to_addr(address: str) -> tuple[str, int]:
@@ -339,22 +338,20 @@ if __name__ == "__main__":
     parser.add_argument("-V", "--version", action="store_true", help="Prints the version")
 
     subparsers = parser.add_subparsers(dest="mode", required=False if "-V" in argv or "--version" in argv else True)
+    
     proxy_subparser = subparsers.add_parser("proxy")
-
     proxy_subparser.add_argument("-f", "--forward", type=str, required=True,
                                  help="The address to expose to the internet.")
     proxy_subparser.add_argument("-b", "--bind", type=str, default="0.0.0.0:4300",
                                  help="The address on which to bind the connection router. (default: 0.0.0.0:4300)")
-    proxy_subparser.add_argument("-v", "--verbose", action="store_true", 
-                        help="Print detailed information including transmitted content")
+    proxy_subparser.add_argument("-v", "--verbose", action="store_true", help="Print detailed information including transmitted content")
 
     local_subparser = subparsers.add_parser("local")
     local_subparser.add_argument("-f", "--forward", type=str, required=True,
                                  help="The address to expose to the internet.")
     local_subparser.add_argument("-c", "--connect", type=str, required=True, 
                                  help="The address to connect to for routing connections.")
-    local_subparser.add_argument("-v", "--verbose", action="store_true", 
-                        help="Print detailed information including transmitted content")
+    local_subparser.add_argument("-v", "--verbose", action="store_true", help="Print detailed information including transmitted content")
 
     try:
         run(main(parser.parse_args()))
