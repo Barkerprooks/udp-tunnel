@@ -78,7 +78,7 @@ class ProxyTunnelProtocol(DatagramProtocol):
 
     # persistent connection
     client_addr: tuple[str, int] | None = None
-    
+
     def __init__(self, forward: DatagramProtocol) -> None:
         self.client_addr = forward.new_client_addr
         self.client_data = forward.new_client_data
@@ -252,7 +252,7 @@ class LocalRouterProtocol(DatagramProtocol):
 
     new_tunnel_port: int | None = None
     status: bytes = Command.CLOSED
-    
+
     def connection_made(self, transport: DatagramTransport) -> None:
         verbose_print(f'local router: sending initial handshake...')
         self.transport = transport

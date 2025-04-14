@@ -9,10 +9,11 @@ if ! [ -f $udptun ]; then
     exit 0
 fi
 
-cat $udptun                 |
-sed '/verbose_print\b/d'    |
-sed '/__verbose_output\b/d' |  
-sed '/--verbose\b/d'        |
-sed '/__version__ = ".*"/ s/"$/-min"/' > $udptun_min
+cat $udptun                            |
+sed '/__version__ = ".*"/ s/"$/-min"/' | 
+sed '/__verbose_output\b/d'            |  
+sed '/verbose_print\b/d'               |
+sed '/--verbose\b/d'                   |
+sed '/^$/d' > $udptun_min
 
 chmod +x $udptun_min
