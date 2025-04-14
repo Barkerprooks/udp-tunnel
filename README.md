@@ -1,6 +1,6 @@
 # UDP Tunnel
 
-A simple, no-dependancy python script to bridge two network ports together. Built for
+A python script to bridge two network ports together. No dependencies required. Built for
 port forwarding games which commonly run on the UDP protocol. Tested with _Quake 3_ and _Project Zomboid_.
 
 ## Downloading
