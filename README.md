@@ -1,14 +1,18 @@
 # UDP Tunnel
+
+_version: 1.0.1_ 
+
 A simple, no-dependancy python script to bridge two network ports together. Built for
 port forwarding games which commonly run on the UDP protocol. Tested with older / slower 
 games like _Quake 3_ and _Project Zomboid_.
 
 ## Downloading
 You just need __Python 3__ installed on both machines, no environments required. Just download
-the script and run it with the desired arguments. Below is a shortcut for downloading the script and
-marking it as executable.
+the script and run it with the desired arguments.
 
-    wget https://coredumped.info/tools/udptun.py && chmod +x ./udptun.py
+You can download it from here.
+
+    wget https://coredumped.info/tools/udptun.py
 
 ## Forwarding a port
 This script assumes there are two machines involved. The script is required on both machines to function
@@ -34,3 +38,13 @@ forward traffic. The default port will be used unless otherwise specified.
     ./udptun.py local --forward 127.0.0.1:4321 --connect example.com
 
 This will begin a handshake process that connects the two ends of the tunnel together.
+
+## Get more performance
+The full version of this script has a verbose option, which lets the user see all the
+packets going through. I understand the checks for these can take some extra cycles and
+I am using one of the slowest languages ever, so I decided to release a minified version
+along with the full version.
+
+For maximum performance you can download the minified version from here.
+
+    wget https://coredumped.info/tools/udptun.min.py
