@@ -9,7 +9,7 @@ the script and run it with the desired arguments.
 
 You can download it from here.
 
-    wget https://coredumped.info/tools/udptun.py
+    wget https://coredumped.info/utils/udptun.py
 
 ## Forwarding a port
 This script assumes there are two machines involved. The script is required on both machines to function
@@ -44,4 +44,4 @@ along with the full version.
 
 For maximum performance you can download the minified version from here.
 
-    wget https://coredumped.info/tools/udptun.min.py
+    wget https://coredumped.info/utils/udptun.min.py
