@@ -93,7 +93,7 @@ class ProxyTunnelProtocol(DatagramProtocol):
             verbose_print(f"proxy tunnel recv: client <- tunnel <- service: {data}")
             self.forward.sendto(data, self.client_addr)
         else:
-            verbose_print(f"proxy tunnel recv: connected {addr_to_string(addr)}, client <- tunnel <- service {self.client_data}")
+            verbose_print(f"proxy tunnel recv: connected {addr_to_string(addr)}")
             # ignore the contents and send the initial data
             self.transport.sendto(self.client_data, addr)
             # transport the new client data through the tunnel as quickly as possible
