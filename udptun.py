@@ -159,7 +159,7 @@ class ProxyRouterProtocol(DatagramProtocol):
 
 async def run_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, int]) -> None:
     print(f"proxy: running ingress tunnel [{addr_to_string(forward_addr)} => {addr_to_string(bind_addr)}]")
-    
+
     # open the public proxied port and the router
     forward_transport, forward_protocol = await udp_bind(ProxyForwardProtocol, forward_addr)
     router_transport, router_protocol = await udp_bind(ProxyRouterProtocol, bind_addr)
@@ -338,7 +338,7 @@ if __name__ == "__main__":
     parser.add_argument("-V", "--version", action="store_true", help="Prints the version")
 
     subparsers = parser.add_subparsers(dest="mode", required=False if "-V" in argv or "--version" in argv else True)
-    
+
     proxy_subparser = subparsers.add_parser("proxy")
     proxy_subparser.add_argument("-f", "--forward", type=str, required=True,
                                  help="The address to expose to the internet.")
