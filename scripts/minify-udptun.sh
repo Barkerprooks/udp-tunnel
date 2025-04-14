@@ -13,7 +13,9 @@ cat $udptun                            |
 sed '/__version__ = ".*"/ s/"$/-min"/' | 
 sed '/__verbose_output\b/d'            |  
 sed '/verbose_print\b/d'               |
+sed '/^[[:space:]]*#/d'                |
 sed '/--verbose\b/d'                   |
+sed 's/#.*$//'                         |
 sed '/^$/d' > $udptun_min
 
 chmod +x $udptun_min

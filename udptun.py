@@ -175,7 +175,7 @@ async def run_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, in
         print("proxy: connected to local tunnel")
         while router_protocol.status == Command.SYNACK:
             if forward_protocol.new_client_addr:
-                
+
                 protocol_factory = lambda: ProxyTunnelProtocol(forward_protocol)
                 tunnel_addr = (forward_addr[0], 0) # bind on any available port
 
