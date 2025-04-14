@@ -1,7 +1,5 @@
 # UDP Tunnel
 
-_version: 1.0.1_ 
-
 A simple, no-dependancy python script to bridge two network ports together. Built for
 port forwarding games which commonly run on the UDP protocol. Tested with older / slower 
 games like _Quake 3_ and _Project Zomboid_.
