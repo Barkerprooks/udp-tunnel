@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 f"""UDP Tunnel
     updated on: 03/24/2025
     github: https://github.com/BarkerProoks/udp-tunnel
@@ -30,6 +30,14 @@ from asyncio import run, get_running_loop, DatagramTransport, DatagramProtocol
 from asyncio import sleep as asleep
 from argparse import ArgumentParser
 from sys import argv
+
+
+__verbose_output: bool = False
+
+
+def verbose_print(*args, **kwargs) -> None:
+    if __verbose_output:
+        print(*args, **kwargs)
 
 
 def string_to_addr(address: str) -> tuple[str, int]:
@@ -72,8 +80,6 @@ class ProxyTunnelProtocol(DatagramProtocol):
     # persistent connection
     client_addr: tuple[str, int] | None = None
     
-    verbose: bool = False
-
     def __init__(self, forward: DatagramProtocol) -> None:
         self.client_addr = forward.new_client_addr
         self.client_data = forward.new_client_data
@@ -84,14 +90,10 @@ class ProxyTunnelProtocol(DatagramProtocol):
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
         if self.tunnel_addr:
-            if self.verbose:
-                print(f"proxy tunnel recv: client <- tunnel <- service")
-                print(data)
+            verbose_print(f"proxy tunnel recv: client <- tunnel <- service: {data}")
             self.forward.sendto(data, self.client_addr)
         else:
-            if self.verbose:
-                print(f"proxy tunnel recv: connected {addr_to_string(addr)}")
-                print(self.client_data)
+            verbose_print(f"proxy tunnel recv: connected {addr_to_string(addr)}, client <- tunnel <- service {self.client_data}")
             # ignore the contents and send the initial data
             self.transport.sendto(self.client_data, addr)
             # transport the new client data through the tunnel as quickly as possible
@@ -112,27 +114,20 @@ class ProxyForwardProtocol(DatagramProtocol):
     # Key = IP Address
     tunnels: dict[str, ProxyTunnelProtocol] = {}
 
-    verbose: bool = False
-
     def connection_made(self, transport: DatagramTransport) -> None:
-        if self.verbose:
-            address = self.transport.get_extra_info("sockname")
-            print(f"proxy tunnel: opened on {address}")
+        verbose_print(f"proxy tunnel: opened on {addr_to_string(transport.get_extra_info('sockname'))}")
         self.transport = transport
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
         if addr not in self.tunnels:
-            if self.verbose:
-                print(f"proxy forward recv: must add new client {addr_to_string(addr)}")
+            verbose_print(f"proxy forward recv: must add new client {addr_to_string(addr)}, client -> tunnel -> service: {data}")
             self.new_client_addr = addr
             self.new_client_data = data
             return
 
         tunnel = self.tunnels[addr]
         if tunnel.tunnel_addr:
-            if self.verbose:
-                print(f"proxy forward recv: client -> tunnel -> service")
-                print(data)
+            verbose_print(f"proxy forward recv: client -> tunnel -> service: {data}")
             tunnel.transport.sendto(data, tunnel.tunnel_addr)
 
 
@@ -146,36 +141,29 @@ class ProxyRouterProtocol(DatagramProtocol):
     local_router_addr: tuple[str, int] | None = None # linked address. keep this alive the whole time 
     status: bytes = Command.CLOSED
 
-    verbose: bool = False
-
     def connection_made(self, transport: DatagramTransport) -> None:
-        if self.verbose:
-            print("proxy router: waiting for initial handshake...")
+        verbose_print("proxy router: waiting for initial handshake...")
         self.transport = transport
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
         # the only things we send the local router are commands
         if self.status == Command.CLOSED and data == Command.SYN:
-            if self.verbose:
-                print(f"proxy router recv: syn, starting handshake from {addr_to_string(addr)}")
+            verbose_print(f"proxy router recv: syn, starting handshake from {addr_to_string(addr)}")
             self.status = Command.ACK
             self.transport.sendto(Command.ACK, addr)
         elif self.status == Command.ACK and data == Command.SYNACK:
-            if self.verbose:
-                print(f"proxy router recv: ack, handshake complete from {addr_to_string(addr)}")
+            verbose_print(f"proxy router recv: ack, handshake complete from {addr_to_string(addr)}")
             self.status = Command.SYNACK
             self.transport.sendto(self.status, addr)
             self.local_router_addr = addr # SYNACK means we've completed handshake
 
 
-async def run_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, int], verbose: bool = False) -> None:
+async def run_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, int]) -> None:
     print(f"proxy: running ingress tunnel [{addr_to_string(forward_addr)} => {addr_to_string(bind_addr)}]")
     
     # open the public proxied port and the router
     forward_transport, forward_protocol = await udp_bind(ProxyForwardProtocol, forward_addr)
     router_transport, router_protocol = await udp_bind(ProxyRouterProtocol, bind_addr)
-
-    router_protocol.verbose = forward_protocol.verbose = verbose
 
     # need to keep track of all connections so we can sever them gracefully
     transports: list[DatagramTransport] = [forward_transport, router_transport]
@@ -193,18 +181,15 @@ async def run_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, in
                 tunnel_addr = (forward_addr[0], 0) # bind on any available port
 
                 # open up proxy tunnel
-                if verbose:
-                    print("proxy: binding an open port for new tunnel")
+                verbose_print("proxy: binding an open port for new tunnel")
                 tunnel_transport, tunnel_protocol = await udp_bind(protocol_factory, tunnel_addr)
-                tunnel_protocol.verbose = verbose
 
                 forward_protocol.tunnels[forward_protocol.new_client_addr] = tunnel_protocol
 
                 _, port = tunnel_transport.get_extra_info("sockname")
                 tunnel_cmd = f"{port}".encode("utf-8")
 
-                if verbose:
-                    print(f"proxy: sending connect request for port {port}")
+                verbose_print(f"proxy: sending connect request for port {port}")
                 router_transport.sendto(Command.CONNECT + tunnel_cmd, router_protocol.local_router_addr)
 
                 forward_protocol.new_client_addr = None
@@ -219,8 +204,7 @@ async def run_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, in
     finally:
         print("closing proxy connections")
         for transport in transports:
-            if verbose:
-                print(f" - closing {transport.get_protocol().__class__.__name__}")
+            verbose_print(f" - closing {transport.get_protocol().__class__.__name__}")
             transport.close()
 
 
@@ -233,18 +217,13 @@ class LocalTunnelProtocol(DatagramProtocol):
     transport: DatagramTransport | None = None
     forward: DatagramTransport | None= None
 
-    verbose: bool = False
-
     def connection_made(self, transport: DatagramTransport) -> None:
-        if self.verbose:
-            print(f"local tunnel: connected to {addr_to_string(transport._address)}")
+        verbose_print(f"local tunnel: connected to {addr_to_string(transport._address)}")
         self.transport = transport
         self.transport.sendto(Command.CONNECT) # confirm connection by sending addr to server
 
     def datagram_received(self, data: bytes, _) -> None:
-        if self.verbose:
-            print("local tunnel recv: service <- tunnel <- client")
-            print(data)
+        verbose_print(f"local tunnel recv: service <- tunnel <- client: {data}")
         self.forward.sendto(data) # forward it directly to the service
 
 
@@ -256,15 +235,12 @@ class LocalForwardProtocol(DatagramProtocol):
     """
     transport: DatagramTransport | None = None
     tunnel: LocalTunnelProtocol | None = None
-    verbose: bool = False
 
     def connection_made(self, transport: DatagramTransport) -> None:
         self.transport = transport
 
     def datagram_received(self, data: bytes, _) -> None:
-        if self.verbose:
-            print("local forward recv: service -> tunnel -> client")
-            print(data)
+        verbose_print(f"local forward recv: service -> tunnel -> client: {data}")
         self.tunnel.transport.sendto(data)
 
 
@@ -278,37 +254,31 @@ class LocalRouterProtocol(DatagramProtocol):
     new_tunnel_port: int | None = None
     status: bytes = Command.CLOSED
     
-    verbose: bool = False
-
     def connection_made(self, transport: DatagramTransport) -> None:
-        if self.verbose:
-            print(f'local router: sending initial handshake...')
+        verbose_print(f'local router: sending initial handshake...')
         self.transport = transport
         self.transport.sendto(Command.SYN)
 
     def datagram_received(self, data: bytes, _) -> None:
         if len(data) == 1: # router base connection commands
             if self.status == Command.CLOSED and data == Command.ACK:
-                if self.verbose:
-                    print("local router recv: ack, handshake complete")
+                verbose_print("local router recv: ack, handshake complete")
                 self.status = Command.SYNACK # we acknowledge and send
                 self.transport.sendto(Command.SYNACK)
             if self.status == Command.SYNACK and data == Command.SYNACK:
                 self.transport.sendto(self.status) # respond to keep-alive
         elif len(data) > 1: # tunnel connect is the only command longer than 1 byte
-            if self.verbose:
-                print("local router recv: incoming connection request")
             if data[0] == Command.CONNECT[0]:
+                verbose_print(f"local router recv: incoming connection request: port {data[1:]}")
                 # if this is not a number we have a real issue >:(
                 self.new_tunnel_port = int(data[1:])
 
 
-async def run_local_loop(forward_addr: tuple[str, int], connect_addr: tuple[str, int], verbose: bool) -> None:
+async def run_local_loop(forward_addr: tuple[str, int], connect_addr: tuple[str, int]) -> None:
     print(f"local: running egress tunnel [{addr_to_string(forward_addr)} => {addr_to_string(connect_addr)}]")
 
     # connect to the routing service
     router_transport, router_protocol = await udp_connect(LocalRouterProtocol, connect_addr)
-    router_protocol.verbose = verbose
 
     # need to keep track of all transports
     transports: list[DatagramTransport] = [router_transport]
@@ -316,8 +286,7 @@ async def run_local_loop(forward_addr: tuple[str, int], connect_addr: tuple[str,
     try:
         print("local: attempting handshake...")
         while not router_protocol.status == Command.SYNACK:
-            if verbose:
-                print("local: retrying handshake...")
+            verbose_print("local: retrying handshake...")
             router_transport.sendto(Command.SYN)
             await asleep(1)
 
@@ -325,15 +294,12 @@ async def run_local_loop(forward_addr: tuple[str, int], connect_addr: tuple[str,
         while router_protocol.status == Command.SYNACK: # while we're connected
             # this not being None indicates a new connection
             if router_protocol.new_tunnel_port is not None:
-                if verbose:
-                    print(f"local: connecting to new tunnel on port {router_protocol.new_tunnel_port}")
+                verbose_print(f"local: connecting to new tunnel on port {router_protocol.new_tunnel_port}")
                 tunnel_addr = (connect_addr[0], router_protocol.new_tunnel_port)
 
                 # create the tunnel connection
                 forward_transport, forward_protocol = await udp_connect(LocalForwardProtocol, forward_addr)
                 tunnel_transport, tunnel_protocol = await udp_connect(LocalTunnelProtocol, tunnel_addr)
-
-                forward_protocol.verbose = tunnel_protocol.verbose = verbose
 
                 # link the new tunnel / forwarder transports
                 tunnel_protocol.forward = forward_transport
@@ -348,8 +314,7 @@ async def run_local_loop(forward_addr: tuple[str, int], connect_addr: tuple[str,
     finally:
         print("closing local connections")
         for transport in transports:
-            if verbose:
-                print(f" - closing {transport.get_protocol().__class__.__name__}")
+            verbose_print(f" - closing {transport.get_protocol().__class__.__name__}")
             transport.close()
 
 
@@ -358,12 +323,15 @@ async def main(args) -> None:
         print("udptun", __version__)
         return
 
+    global __verbose_output # set the verbosity global
+    __verbose_output = args.verbose
+
     forward_addr = string_to_addr(args.forward)
     match args.mode:
         case "local": 
             args.connect = args.connect if ':' in args.connect else f"{args.connect}:4300"
-            await run_local_loop(forward_addr, string_to_addr(args.connect), args.verbose)
-        case "proxy": await run_proxy_loop(forward_addr, string_to_addr(args.bind), args.verbose)
+            await run_local_loop(forward_addr, string_to_addr(args.connect))
+        case "proxy": await run_proxy_loop(forward_addr, string_to_addr(args.bind))
 
 
 if __name__ == "__main__":
