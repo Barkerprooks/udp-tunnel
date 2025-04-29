@@ -214,7 +214,7 @@ async def run_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, in
                     transports.remove(protocol.transport)
                     forward_protocol.tunnels.remove(protocol)
 
-            # await sleep(0.1)
+            await sleep(0.01)
     except KeyboardInterrupt:
         raise KeyboardInterrupt
     finally:
@@ -307,7 +307,6 @@ async def run_local_loop(forward_addr: tuple[str, int], connect_addr: tuple[str,
     try:
         print("local: attempting handshake...")
         while not router_protocol.status == Command.SYNACK:
-            verbose_print("local: retrying handshake...")
             router_transport.sendto(Command.SYN)
             await sleep(0.1)
 
@@ -339,7 +338,7 @@ async def run_local_loop(forward_addr: tuple[str, int], connect_addr: tuple[str,
                     tunnels.remove(protocol)
 
             # async needs a delay to process things
-            # await sleep(0.1)
+            await sleep(0.01)
     except KeyboardInterrupt:
         raise KeyboardInterrupt
     finally:
