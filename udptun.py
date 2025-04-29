@@ -147,11 +147,15 @@ class ProxyRouterProtocol(DatagramProtocol):
     local_router_addr: tuple[str, int] | None = None # linked address. keep this alive the whole time 
     status: bytes = Command.CLOSED
 
+    last_interacted: int = 0
+
     def connection_made(self, transport: DatagramTransport) -> None:
         verbose_print("proxy router: waiting for initial handshake...")
+        self.last_interacted = time()
         self.transport = transport
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
+        self.last_interacted = time()
         # the only things we send the local router are commands
         if self.status == Command.CLOSED and data == Command.SYN:
             verbose_print(f"proxy router recv: syn, starting handshake from {addr_to_string(addr)}")
@@ -208,12 +212,16 @@ async def run_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, in
 
             # kill open tunnels that have not been interacted with
             now = time()
+            
             for addr, protocol in list(forward_protocol.tunnels.items()):
                 if now - protocol.last_interacted > 30: # timeout of 30 seconds
                     verbose_print(f"proxy: closing tunnel {addr_to_string(addr)} due to timeout")
                     protocol.transport.close()
                     transports.remove(protocol.transport)
                     del forward_protocol.tunnels[addr]
+
+            if now - router_protocol.last_interacted > 30:
+                raise TimeoutError("No response from local machine")
 
             await sleep(0.01)
     except KeyboardInterrupt:
@@ -275,12 +283,16 @@ class LocalRouterProtocol(DatagramProtocol):
     new_tunnel_port: int | None = None
     status: bytes = Command.CLOSED
 
+    last_interacted: int = 0
+
     def connection_made(self, transport: DatagramTransport) -> None:
         verbose_print(f'local router: sending initial handshake...')
+        self.last_interacted = time()
         self.transport = transport
         self.transport.sendto(Command.SYN)
 
     def datagram_received(self, data: bytes, _) -> None:
+        self.last_interacted = time()
         if len(data) == 1: # router base connection commands
             if self.status == Command.CLOSED and data == Command.ACK:
                 verbose_print("local router recv: ack, handshake complete")
@@ -332,6 +344,7 @@ async def run_local_loop(forward_addr: tuple[str, int], connect_addr: tuple[str,
 
             # kill open tunnels that have not been interacted with
             now = time()
+            
             for addr, protocol in list(tunnels.items()):
                 if now - protocol.last_interacted > 30: # timeout of 30 seconds
                     verbose_print(f"local: closing tunnel {addr_to_string(addr)} due to timeout")
@@ -340,6 +353,9 @@ async def run_local_loop(forward_addr: tuple[str, int], connect_addr: tuple[str,
                     transports.remove(protocol.transport)
                     transports.remove(protocol.forward)
                     del tunnels[addr]
+
+            if now - router_protocol.last_interacted > 30:
+                raise TimeoutError("No response from remote proxy")
 
             # async needs a delay to process things
             await sleep(0.01)
