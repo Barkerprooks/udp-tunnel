@@ -208,7 +208,7 @@ async def run_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, in
 
             # kill open tunnels that have not been interacted with
             now = time()
-            for addr, protocol in forward_protocol.tunnels.items():
+            for addr, protocol in list(forward_protocol.tunnels.items()):
                 if now - protocol.last_interacted > 30: # timeout of 30 seconds
                     verbose_print(f"proxy: closing tunnel {addr_to_string(addr)} due to timeout")
                     transports.remove(protocol.transport)
@@ -331,7 +331,7 @@ async def run_local_loop(forward_addr: tuple[str, int], connect_addr: tuple[str,
 
             # kill open tunnels that have not been interacted with
             now = time()
-            for addr, protocol in tunnels.items():
+            for addr, protocol in list(tunnels.items()):
                 if now - protocol.last_interacted > 30: # timeout of 30 seconds
                     verbose_print(f"local: closing tunnel {addr_to_string(addr)} due to timeout")
                     transports.remove(protocol.transport)
