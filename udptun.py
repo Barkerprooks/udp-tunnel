@@ -325,6 +325,7 @@ async def run_local_loop(forward_addr: tuple[str, int], connect_addr: tuple[str,
                 # link the new tunnel / forwarder transports
                 tunnel_protocol.forward = forward_transport
                 forward_protocol.tunnel = tunnel_protocol
+                tunnels.append(tunnel_protocol)
 
                 transports.extend([tunnel_transport, forward_transport])
                 router_protocol.new_tunnel_port = None
