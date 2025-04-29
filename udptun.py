@@ -309,7 +309,7 @@ async def run_local_loop(forward_addr: tuple[str, int], connect_addr: tuple[str,
         while not router_protocol.status == Command.SYNACK:
             verbose_print("local: retrying handshake...")
             router_transport.sendto(Command.SYN)
-            await sleep(1)
+            # await sleep(1)
 
         print("local: connected to proxy")
         while router_protocol.status == Command.SYNACK: # while we're connected
