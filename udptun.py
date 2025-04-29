@@ -208,11 +208,9 @@ async def run_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, in
 
             # kill open tunnels that have not been interacted with
             now = time()
-            for protocol in forward_protocol.tunnels:
-                print(protocol)
-                print(dir(protocol))
+            for addr, protocol in forward_protocol.tunnels.items():
                 if now - protocol.last_interacted > 30: # timeout of 30 seconds
-                    verbose_print(f"- closing proxy tunnel {addr_to_string(protocol.forward.get_extra_info('sockname'))} due to timeout")
+                    verbose_print(f"- closing proxy tunnel {addr_to_string(addr)} due to timeout")
                     transports.remove(protocol.transport)
                     forward_protocol.tunnels.remove(protocol)
 
