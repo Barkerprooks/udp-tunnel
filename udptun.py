@@ -210,9 +210,9 @@ async def run_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, in
             now = time()
             for addr, protocol in forward_protocol.tunnels.items():
                 if now - protocol.last_interacted > 30: # timeout of 30 seconds
-                    verbose_print(f"- closing proxy tunnel {addr_to_string(addr)} due to timeout")
+                    verbose_print(f"proxy: closing tunnel {addr_to_string(addr)} due to timeout")
                     transports.remove(protocol.transport)
-                    forward_protocol.tunnels.remove(protocol)
+                    del forward_protocol.tunnels[addr]
 
             await sleep(0.01)
     except KeyboardInterrupt:
@@ -302,7 +302,7 @@ async def run_local_loop(forward_addr: tuple[str, int], connect_addr: tuple[str,
 
     # need to keep track of all transports
     transports: list[DatagramTransport] = [router_transport]
-    tunnels: list[LocalTunnelProtocol] = []
+    tunnels: list[str. LocalTunnelProtocol] = {}
 
     try:
         print("local: attempting handshake...")
@@ -324,18 +324,18 @@ async def run_local_loop(forward_addr: tuple[str, int], connect_addr: tuple[str,
                 # link the new tunnel / forwarder transports
                 tunnel_protocol.forward = forward_transport
                 forward_protocol.tunnel = tunnel_protocol
-                tunnels.append(tunnel_protocol)
+                tunnels[tunnel_addr] = tunnel_protocol
 
                 transports.extend([tunnel_transport, forward_transport])
                 router_protocol.new_tunnel_port = None
 
             # kill open tunnels that have not been interacted with
             now = time()
-            for protocol in tunnels:
+            for addr, protocol in tunnels.items():
                 if now - protocol.last_interacted > 30: # timeout of 30 seconds
-                    verbose_print(f"- closing local tunnel {addr_to_string(protocol.forward.get_extra_info('sockname'))} due to timeout")
+                    verbose_print(f"local: closing tunnel {addr_to_string(addr)} due to timeout")
                     transports.remove(protocol.transport)
-                    tunnels.remove(protocol)
+                    del tunnels[addr]
 
             # async needs a delay to process things
             await sleep(0.01)
