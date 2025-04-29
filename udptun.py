@@ -216,7 +216,7 @@ async def run_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, in
                     transports.remove(protocol.transport)
                     forward_protocol.tunnels.remove(protocol)
 
-            await sleep(0.1)
+            # await sleep(0.1)
     except KeyboardInterrupt:
         raise KeyboardInterrupt
     finally:
@@ -341,7 +341,7 @@ async def run_local_loop(forward_addr: tuple[str, int], connect_addr: tuple[str,
                     tunnels.remove(protocol)
 
             # async needs a delay to process things
-            await sleep(0.1)
+            # await sleep(0.1)
     except KeyboardInterrupt:
         raise KeyboardInterrupt
     finally:
