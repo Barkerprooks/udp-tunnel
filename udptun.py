@@ -166,7 +166,9 @@ class ProxyRouterProtocol(DatagramProtocol):
             self.status = Command.SYNACK
             self.transport.sendto(self.status, addr)
             self.local_router_addr = addr # SYNACK means we've completed handshake
-
+        elif not (self.status == Command.SYNACK and data == Command.SYNACK):
+            raise ValueError("Handshake from local out of sync")
+            
 
 async def run_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, int]) -> None:
     print(f"proxy: running ingress tunnel [{addr_to_string(forward_addr)} => {addr_to_string(bind_addr)}]")
@@ -300,6 +302,8 @@ class LocalRouterProtocol(DatagramProtocol):
                 self.transport.sendto(Command.SYNACK)
             if self.status == Command.SYNACK and data == Command.SYNACK:
                 self.transport.sendto(self.status) # respond to keep-alive
+            else: # handshake out of sync, crash the program
+                raise ValueError("Handshake from proxy out of sync")
         elif len(data) > 1: # tunnel connect is the only command longer than 1 byte
             if data[0] == Command.CONNECT[0]:
                 verbose_print(f"local router recv: incoming connection request: port {data[1:]}")
