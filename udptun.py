@@ -148,6 +148,7 @@ class ProxyRouterProtocol(DatagramProtocol):
     status: bytes = Command.CLOSED
 
     last_interacted: int = 0
+    out_of_sync: bool = False
 
     def connection_made(self, transport: DatagramTransport) -> None:
         verbose_print("proxy router: waiting for initial handshake...")
@@ -166,9 +167,9 @@ class ProxyRouterProtocol(DatagramProtocol):
             self.status = Command.SYNACK
             self.transport.sendto(self.status, addr)
             self.local_router_addr = addr # SYNACK means we've completed handshake
-        elif not (self.status == Command.SYNACK and data == Command.SYNACK):
-            raise ValueError("Handshake from local out of sync")
-            
+        elif self.status == Command.SYNACK and data != Command.SYNACK:
+            self.out_of_sync = True
+
 
 async def run_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, int]) -> None:
     print(f"proxy: running ingress tunnel [{addr_to_string(forward_addr)} => {addr_to_string(bind_addr)}]")
@@ -221,6 +222,9 @@ async def run_proxy_loop(forward_addr: tuple[str, int], bind_addr: tuple[str, in
                     protocol.transport.close()
                     transports.remove(protocol.transport)
                     del forward_protocol.tunnels[addr]
+
+            if router_protocol.out_of_sync:
+                raise ValueError("Handshake out of sync with local machine")
 
             if now - router_protocol.last_interacted > 30:
                 raise TimeoutError("No response from local machine")
@@ -286,6 +290,7 @@ class LocalRouterProtocol(DatagramProtocol):
     status: bytes = Command.CLOSED
 
     last_interacted: int = 0
+    out_of_sync: bool = False
 
     def connection_made(self, transport: DatagramTransport) -> None:
         verbose_print(f'local router: sending initial handshake...')
@@ -300,10 +305,10 @@ class LocalRouterProtocol(DatagramProtocol):
                 verbose_print("local router recv: ack, handshake complete")
                 self.status = Command.SYNACK # we acknowledge and send
                 self.transport.sendto(Command.SYNACK)
-            if self.status == Command.SYNACK and data == Command.SYNACK:
+            elif self.status == Command.SYNACK and data == Command.SYNACK:
                 self.transport.sendto(self.status) # respond to keep-alive
-            else: # handshake out of sync, crash the program
-                raise ValueError("Handshake from proxy out of sync")
+            else:
+                self.out_of_sync = True
         elif len(data) > 1: # tunnel connect is the only command longer than 1 byte
             if data[0] == Command.CONNECT[0]:
                 verbose_print(f"local router recv: incoming connection request: port {data[1:]}")
@@ -357,6 +362,9 @@ async def run_local_loop(forward_addr: tuple[str, int], connect_addr: tuple[str,
                     transports.remove(protocol.transport)
                     transports.remove(protocol.forward)
                     del tunnels[addr]
+
+            if router_protocol.out_of_sync:
+                raise ValueError("Handshake out of sync with remote proxy")
 
             if now - router_protocol.last_interacted > 30:
                 raise TimeoutError("No response from remote proxy")
