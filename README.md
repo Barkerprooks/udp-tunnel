@@ -18,8 +18,7 @@ This script assumes there are two machines involved. The script is required on b
 - One machine is hosting the service that is unreachable from the internet. A common situation is a game server on personal hardware behind the router's firewall.
 - The other machine is usually hosted elsewhere and has a public IP address. For this example we are hosted at `example.com`.
 
-### Remote Forwarding
-
+### Public Address (Proxy)
 On the remote machine, download the script and run it with the `proxy` subcommand. By 
 default the service will bind on `0.0.0.0:4300`. 
 
@@ -33,7 +32,7 @@ Change the routing service address with `--bind` or `-b`. This command will chan
 
     python udptun.py proxy --forward 0.0.0.0:4321 --bind 0.0.0.0:4444
 
-### Local Forwarding
+### Local Service (Local)
 On the local machine, download the script and run it with the `local` subcommand. This
 one requires an extra argument `--connect` which instructs the local proxy where to
 forward traffic. The default port will be used unless otherwise specified.
