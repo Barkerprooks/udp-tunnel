@@ -1,11 +1,10 @@
 # UDP Tunnel
 
 A python script to bridge two network ports together. No dependencies required. Built for
-port forwarding games which commonly run on the UDP protocol. Tested extensively using _Project Zomboid_ behind a home router.
+port forwarding games which commonly run on the UDP protocol. Tested extensively using [_Project Zomboid_](https://projectzomboid.com/blog/) behind a home router.
 
 ## Downloading
-You just need __Python 3__ installed on both machines, no environments required. Just download
-the script and run it with the desired arguments.
+You just need [Python3](https://www.python.org/) installed on both machines, no environments required. Just download the script and run it with the desired arguments.
 
 Run this command to download the script.
 #### Linux / MacOS
